@@ -370,22 +370,50 @@ class MainActivity : Activity() {
             setBackgroundColor(0xFF0B1020.toInt())
         }
 
+        // Hero da identidade TurboLite: gamer profissional, azul profundo e ciano.
+        val hero = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(16), dp(18), dp(16), dp(18))
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(0xFF102744.toInt(), 0xFF07111F.toInt())).apply {
+                cornerRadius = dp(22).toFloat()
+                setStroke(dp(1), 0xFF075B80.toInt())
+            }
+        }
+        val brandMark = android.widget.ImageView(this).apply {
+            setImageResource(com.vnsants.turbolite.R.drawable.ic_turbolite)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+        }
+        hero.addView(brandMark, LinearLayout.LayoutParams(dp(66), dp(66)))
+        val brandCopy = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), 0, 0, 0)
+        }
         val title = TextView(this).apply {
-            text = "⚡ TurboLite"
-            textSize = 32f
-            setTextColor(0xFFFFFFFF.toInt())
-            typeface = Typeface.DEFAULT_BOLD
-            letterSpacing = -0.02f
+            text = "TurboLite"
+            textSize = 29f
+            setTextColor(0xFFF2F8FF.toInt())
+            typeface = Typeface.create("sans-serif-black", Typeface.BOLD_ITALIC)
+            letterSpacing = -0.025f
         }
-        root.addView(title)
-
+        brandCopy.addView(title)
         val subtitle = TextView(this).apply {
-            text = "BETA 0.1 • Android 14 • sem root"
-            textSize = 14f
-            setTextColor(0xFF9CAAC4.toInt())
-            setPadding(0, dp(5), 0, dp(18))
+            text = "MAIS CONTROLE. MAIS DESEMPENHO."
+            textSize = 10f
+            letterSpacing = 0.07f
+            setTextColor(0xFF00D4FF.toInt())
+            setPadding(0, dp(4), 0, dp(5))
         }
-        root.addView(subtitle)
+        brandCopy.addView(subtitle)
+        val version = TextView(this).apply {
+            text = "BETA • ANDROID 14 • SEM ROOT"
+            textSize = 10f
+            setTextColor(0xFF9CAAC4.toInt())
+        }
+        brandCopy.addView(version)
+        hero.addView(brandCopy, LinearLayout.LayoutParams(0, -2, 1f))
+        root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(16) })
 
         val generalSection = TextView(this).apply {
             text = "CONTROLE RÁPIDO"
@@ -424,7 +452,7 @@ class MainActivity : Activity() {
         root.addView(status)
 
         val performanceCard = TextView(this).apply {
-            text = "STATUS DE DESEMPENHO\\nLendo dados do aparelho…"
+            text = "STATUS DO SISTEMA\\nLendo dados do aparelho…"
             textSize = 14f
             setTextColor(0xFFE2E8F0.toInt())
             typeface = Typeface.MONOSPACE
@@ -447,8 +475,6 @@ class MainActivity : Activity() {
         }
         root.addView(refreshStatusButton, LinearLayout.LayoutParams(-1, dp(48)))
         updatePerformanceCard(performanceCard)
-
-        addCustomProfilesSection(root)
 
         actionButton = Button(this).apply {
             text = "FECHAR OS OUTROS APPS"
@@ -630,6 +656,9 @@ class MainActivity : Activity() {
         }
         root.addView(restoreUsageButton, LinearLayout.LayoutParams(-1, dp(52)))
 
+        // Perfis ficam depois dos controles principais, evitando ocupar o topo da tela.
+        addCustomProfilesSection(root)
+
         val toolsSection = TextView(this).apply {
             text = "PAINEL E MONITORAMENTO"
             textSize = 12f
@@ -721,13 +750,21 @@ class MainActivity : Activity() {
 
     private fun styleControls(view: android.view.View) {
         if (view is Button) {
-            view.background = GradientDrawable().apply {
-                shape = GradientDrawable.RECTANGLE
+            val label = view.text.toString().uppercase(java.util.Locale.ROOT)
+            val primary = label.contains("FECHAR OS OUTROS APPS") ||
+                label.contains("APLICAR PERFIL SELECIONADO") ||
+                label.contains("ATIVAR MODO HARD") ||
+                label.contains("SALVAR / ATUALIZAR PERFIL")
+            val caution = label.contains("HARD") || label.contains("EXCLUIR")
+            view.background = GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                if (primary) intArrayOf(0xFF007EA8.toInt(), 0xFF00B8D9.toInt())
+                else intArrayOf(0xFF13253B.toInt(), 0xFF0E1A2C.toInt())
+            ).apply {
                 cornerRadius = dp(14).toFloat()
-                setColor(if (view.text.toString().contains("RESFRIAMENTO") || view.text.toString().contains("FECHAR APPS")) 0xFF183044.toInt() else 0xFF17243A.toInt())
-                setStroke(dp(1), 0xFF263B57.toInt())
+                setStroke(dp(1), if (primary) 0xFF00D4FF.toInt() else 0xFF263F5C.toInt())
             }
-            view.setTextColor(0xFFEAFBFF.toInt())
+            view.setTextColor(if (primary) 0xFF03111D.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAFBFF.toInt())
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
             view.isAllCaps = false
