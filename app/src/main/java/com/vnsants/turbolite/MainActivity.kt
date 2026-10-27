@@ -712,6 +712,7 @@ class MainActivity : Activity() {
         addMetricToggle("Mostrar uso de CPU (Shizuku)", "show_cpu", false)
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
 
+        val settingsStartIndex = root.childCount
         reloadButton = Button(this).apply {
             text = "ATUALIZAR LISTA / PERMISSÃO"
             setOnClickListener {
@@ -744,10 +745,11 @@ class MainActivity : Activity() {
         for (index in 0 until root.childCount) {
             val tab = when {
                 index < gamesStartIndex -> "home"
-                index < energyStartIndex -> "more"
+                index < energyStartIndex -> "games"
                 index < profilesStartIndex -> "home"
                 index < toolsStartIndex -> "profiles"
-                else -> "monitor"
+                index < settingsStartIndex -> "monitor"
+                else -> "settings"
             }
             root.getChildAt(index).tag = tab
         }
@@ -777,7 +779,8 @@ class MainActivity : Activity() {
             Triple("⌂", "Início", "home"),
             Triple("◇", "Perfis", "profiles"),
             Triple("◉", "Monitor", "monitor"),
-            Triple("☷", "Mais", "more")
+            Triple("⚙", "Config.", "settings"),
+            Triple("✦", "Jogos", "games")
         )
         val navButtons = mutableMapOf<String, TextView>()
         fun selectTab(tab: String) {
