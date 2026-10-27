@@ -148,7 +148,7 @@ class OverlayService : Service() {
                         previousCpuTotal = total
                         previousCpuIdle = idle
                     }
-                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk '\\$1 ~ /^[0-9]+$/ && \\$1 > 1000 { printf \"%.0f\\n\", \\$1; exit }'"
+                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+$/ && \$1 > 1000 { printf \"%.0f\\n\", \$1; exit }'"
                     val tp = Shizuku.newProcess(arrayOf("sh", "-c", tempCmd), null, null)
                     val rawTemp = tp.inputStream.bufferedReader().use { it.readText().trim() }
                     tp.waitFor()
