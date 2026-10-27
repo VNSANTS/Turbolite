@@ -65,7 +65,7 @@ class MainActivity : Activity() {
                                     else -> null
                                 }
                             }.filter { it in 25f..120f }.toList()
-                        val zoneDump = runShell("for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done").second
+                        val zoneDump = runShell("for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done").second
                         val zoneValues = zoneDump.lineSequence().mapNotNull { it.trim().toFloatOrNull() }
                             .mapNotNull { raw ->
                                 when {
