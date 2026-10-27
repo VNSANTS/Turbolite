@@ -185,6 +185,47 @@ class MainActivity : Activity() {
         }
         root.addView(gameStandardButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val mediaTitle = TextView(this).apply {
+            text = "\nMODO STREAMING / ECONOMIA / RESFRIAMENTO"
+            textSize = 18f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(14), 0, dp(4))
+        }
+        root.addView(mediaTitle)
+        val mediaNote = TextView(this).apply {
+            text = "Selecione acima o app que quer manter aberto (ex.: Instagram). Streaming reduz consumo moderadamente; resfriamento usa economia máxima disponível e tenta limitar CPU se o aparelho permitir."
+            textSize = 13f
+            setTextColor(0xFFB8C4D9.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        root.addView(mediaNote)
+        val streamingButton = Button(this).apply {
+            text = "MODO STREAMING • EQUILÍBRIO"
+            setOnClickListener { applyUsageProfile("streaming") }
+        }
+        root.addView(streamingButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val efficiencyButton = Button(this).apply {
+            text = "MODO EFICIÊNCIA • ECONOMIA MODERADA"
+            setOnClickListener { applyUsageProfile("efficiency") }
+        }
+        root.addView(efficiencyButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val coolingButton = Button(this).apply {
+            text = "RESFRIAMENTO RÁPIDO • ECONOMIA MÁXIMA"
+            setOnClickListener { applyUsageProfile("cooling") }
+        }
+        root.addView(coolingButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val cleanRamButton = Button(this).apply {
+            text = "COMBO: FECHAR APPS + LIMPAR RAM/CACHE"
+            setOnClickListener { cleanRamAndBackgroundApps() }
+        }
+        root.addView(cleanRamButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val restoreUsageButton = Button(this).apply {
+            text = "RESTAURAR ENERGIA / CPU / TELA"
+            setOnClickListener { restoreUsageProfile() }
+        }
+        root.addView(restoreUsageButton, LinearLayout.LayoutParams(-1, dp(52)))
+
         val overlayTitle = TextView(this).apply {
             text = "\nPAINEL FLUTUANTE"
             textSize = 18f
@@ -647,6 +688,154 @@ class MainActivity : Activity() {
                     "O Android pode reiniciar alguns apps automaticamente."
                 actionButton.isEnabled = true
                 Toast.makeText(this, "TurboLite: $stopped apps processados", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
+
+    private fun applyUsageProfile(profile: String) {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+        status.text = "Aplicando perfil $profile…"
+        executor.execute {
+            try {
+                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                if (!prefs.getBoolean("usage_profile_saved", false)) {
+                    val lowPower = runShell("settings get global low_power").second
+                    val peak = runShell("settings get system peak_refresh_rate").second
+                    val min = runShell("settings get system min_refresh_rate").second
+                    prefs.edit()
+                        .putString("usage_original_low_power", lowPower.ifBlank { "0" })
+                        .putString("usage_original_peak", peak.ifBlank { "null" })
+                        .putString("usage_original_min", min.ifBlank { "null" })
+                        .putBoolean("usage_profile_saved", true).apply()
+                }
+                val isCooling = profile == "cooling"
+                val isEfficiency = profile == "efficiency" || isCooling
+                val lowPowerResult = runShell("settings put global low_power " + if (isEfficiency) "1" else "0")
+                if (lowPowerResult.first != 0) throw IllegalStateException("Não foi possível alterar economia do Android")
+                runShell("settings put system peak_refresh_rate 60.0")
+                runShell("settings put system min_refresh_rate 60.0")
+
+                var cpuPoliciesChanged = 0
+                if (isCooling) {
+                    val paths = runShell("ls -d /sys/devices/system/cpu/cpufreq/policy*/scaling_max_freq 2>/dev/null").second
+                        .lines().filter { it.matches(Regex("/sys/devices/system/cpu/cpufreq/policy[0-9]+/scaling_max_freq")) }
+                    for ((index, path) in paths.withIndex()) {
+                        val original = runShell("cat $path").second.toLongOrNull() ?: continue
+                        val savedKey = "usage_cpu_max_$index"
+                        if (!prefs.contains(savedKey)) prefs.edit().putString(savedKey, "$path=$original").apply()
+                        val reduced = (original / 2L).coerceAtLeast(1L)
+                        val result = runShell("echo $reduced > $path 2>&1; cat $path")
+                        if (result.second.trim().toLongOrNull() == reduced) cpuPoliciesChanged++
+                    }
+                    prefs.edit().putInt("usage_cpu_policy_count", paths.size).apply()
+                }
+
+                var stopped = 0
+                val candidates = packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
+                    app.packageName != packageName && app.packageName != keepPackage &&
+                        (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+                        packageManager.getLaunchIntentForPackage(app.packageName) != null
+                }
+                for (app in candidates) {
+                    val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
+                    if (result.first == 0) stopped++
+                }
+                runShell("am kill-all")
+                runShell("pm trim-caches 128M")
+
+                runOnUiThread {
+                    status.text = when (profile) {
+                        "streaming" -> "Streaming ativado: equilíbrio, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage. A XOS pode ignorar a preferência de Hz."
+                        "efficiency" -> "Eficiência ativada: economia de bateria, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage."
+                        else -> "Resfriamento solicitado: economia máxima, 60 Hz e $stopped apps encerrados. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite; apague a tela e pare de usar enquanto esfria."
+                    }
+                    Toast.makeText(this, "Perfil aplicado. App mantido: $keepPackage", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Falha ao aplicar perfil: ${e.message ?: "erro desconhecido"}" }
+            }
+        }
+    }
+
+    private fun cleanRamAndBackgroundApps() {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+        status.text = "Fechando apps e solicitando limpeza de memória…"
+        executor.execute {
+            var stopped = 0
+            try {
+                val candidates = packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
+                    app.packageName != packageName && app.packageName != keepPackage &&
+                        (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+                        packageManager.getLaunchIntentForPackage(app.packageName) != null
+                }
+                for (app in candidates) {
+                    val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
+                    if (result.first == 0) stopped++
+                }
+                runShell("am kill-all")
+                runShell("pm trim-caches 128M")
+                runOnUiThread {
+                    status.text = "Combo concluído: $stopped apps encerrados; limpeza de processos em cache e cache recuperável solicitada. Mantido: $keepPackage. O Android pode reiniciar processos."
+                    Toast.makeText(this, "Limpeza solicitada", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Erro na limpeza: ${e.message ?: "erro desconhecido"}" }
+            }
+        }
+    }
+
+    private fun restoreUsageProfile() {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        executor.execute {
+            try {
+                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                if (!prefs.getBoolean("usage_profile_saved", false)) {
+                    runOnUiThread { status.text = "Nenhum perfil de energia salvo para restaurar." }
+                    return@execute
+                }
+                val oldLowPower = prefs.getString("usage_original_low_power", "0") ?: "0"
+                runShell("settings put global low_power " + if (oldLowPower.trim() == "1") "1" else "0")
+                for ((key, setting) in listOf("usage_original_peak" to "peak_refresh_rate", "usage_original_min" to "min_refresh_rate")) {
+                    val old = prefs.getString(key, "null") ?: "null"
+                    if (old.trim() == "null") runShell("settings delete system $setting")
+                    else {
+                        val safe = old.trim().replace(Regex("[^0-9.]"), "")
+                        if (safe.isNotBlank()) runShell("settings put system $setting $safe")
+                    }
+                }
+                val count = prefs.getInt("usage_cpu_policy_count", 0)
+                var cpuRestored = 0
+                for (index in 0 until count) {
+                    val saved = prefs.getString("usage_cpu_max_$index", null) ?: continue
+                    val split = saved.lastIndexOf('=')
+                    if (split <= 0) continue
+                    val path = saved.substring(0, split)
+                    val value = saved.substring(split + 1).toLongOrNull() ?: continue
+                    if (path.matches(Regex("/sys/devices/system/cpu/cpufreq/policy[0-9]+/scaling_max_freq"))) {
+                        val result = runShell("echo $value > $path 2>&1; cat $path")
+                        if (result.second.trim().toLongOrNull() == value) cpuRestored++
+                    }
+                    prefs.edit().remove("usage_cpu_max_$index").apply()
+                }
+                prefs.edit().putBoolean("usage_profile_saved", false).apply()
+                runOnUiThread { status.text = "Perfil restaurado. Políticas CPU restauradas: $cpuRestored. Apps encerrados não são reabertos automaticamente." }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Falha ao restaurar perfil: ${e.message ?: "erro desconhecido"}" }
             }
         }
     }
