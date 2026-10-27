@@ -7,7 +7,7 @@
 
     <application
         android:allowBackup="false"
-        android:label="TurboLite Beta"
+        android:label="TurboLite"
         android:icon="@drawable/ic_turbolite"
         android:roundIcon="@drawable/ic_turbolite"
         android:theme="@style/TurboLiteTheme"
