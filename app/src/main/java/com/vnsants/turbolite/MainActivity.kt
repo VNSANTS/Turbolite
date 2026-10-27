@@ -1,6 +1,7 @@
 package com.vnsants.turbolite
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -8,11 +9,15 @@ import android.net.TrafficStats
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Typeface
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Path
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
+import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
@@ -54,6 +59,11 @@ class MainActivity : Activity() {
     private lateinit var performanceCard: TextView
     private lateinit var monitorGauge: TextView
     private lateinit var monitorMetrics: TextView
+    private lateinit var currentModeCard: TextView
+    private lateinit var permissionCard: TextView
+    private lateinit var monitorChart: MetricChartView
+    private val metricHistory = mutableListOf<MetricSample>()
+    private data class MetricSample(val cpu: Int?, val ram: Int, val temperature: Float?)
     private val monitorUpdater = object : Runnable {
         override fun run() {
             if (selectedTabKey != "monitor" || isFinishing) return
@@ -152,6 +162,7 @@ class MainActivity : Activity() {
                 status.text = "Permissão negada. Autorize o TurboLite no Shizuku."
                 actionButton.isEnabled = false
             }
+            if (::permissionCard.isInitialized) permissionCard.text = "SHIZUKU / PERMISSÕES\n${status.text}"
         }
     }
 
@@ -363,9 +374,10 @@ class MainActivity : Activity() {
 
     private fun updateMonitorDashboard() {
         if (::performanceCard.isInitialized) updatePerformanceCard(performanceCard)
+        if (::currentModeCard.isInitialized) updateCurrentModeCard()
         if (::monitorMetrics.isInitialized) {
             monitorMetrics.text = performanceCard.text.toString()
-                .replace("STATUS DE DESEMPENHO", "INDICADORES DO SISTEMA") +
+                .replace("STATUS DO SISTEMA", "INDICADORES DO SISTEMA") +
                 "\nFPS: estimativa disponível no painel flutuante com Shizuku"
         }
         if (::monitorGauge.isInitialized) {
@@ -420,6 +432,7 @@ class MainActivity : Activity() {
                 }
             }
             var cpuText = "indisponível"
+            var cpuPercent: Int? = null
             try {
                 val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
                 val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
@@ -429,19 +442,42 @@ class MainActivity : Activity() {
                     if (previousCpuTotal > 0L && total > previousCpuTotal) {
                         val usage = (((total - previousCpuTotal - (idle - previousCpuIdle)).toDouble() * 100.0) / (total - previousCpuTotal)).toInt().coerceIn(0, 100)
                         cpuText = "$usage%"
+                        cpuPercent = usage
                     } else cpuText = "calculando…"
                     previousCpuTotal = total
                     previousCpuIdle = idle
                 }
             } catch (_: Exception) { }
-            card.text = "STATUS DE DESEMPENHO\n" +
-                "CPU: $cpuText     RAM: $usedMb / $totalMb MB\n" +
-                "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\n" +
-                "Temperatura da bateria: $temp • térmico: $thermalStatus\n" +
-                "Rede aparelho: $network"
+            card.text = "STATUS DO SISTEMA\n" +
+                "CPU   $cpuText       RAM   ${if (totalMb > 0) usedMb * 100 / totalMb else 0}%\n" +
+                "Bateria   " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "       ${temp}\n" +
+                "RAM   $usedMb / $totalMb MB  •  livre $freeMb MB\n" +
+                "Rede   $network  •  térmico $thermalStatus"
+            if (selectedTabKey == "monitor") {
+                metricHistory.add(MetricSample(cpuPercent, if (totalMb > 0) (usedMb * 100 / totalMb).toInt() else 0, tempTenths.takeIf { it > 0 }?.div(10f)))
+                if (metricHistory.size > 60) metricHistory.removeAt(0)
+                if (::monitorChart.isInitialized) monitorChart.setSamples(metricHistory.toList())
+            }
         } catch (e: Exception) {
             card.text = "STATUS DE DESEMPENHO\\nNão foi possível ler todas as métricas neste Android."
         }
+    }
+
+    private fun updateCurrentModeCard() {
+        val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+        val mode = when {
+            prefs.getBoolean("auto_thermal_cooling_active", false) -> "Resfriamento automático"
+            prefs.getBoolean("usage_profile_saved", false) -> when (prefs.getString("active_usage_profile", "")) {
+                "streaming" -> "Streaming • equilíbrio"
+                "efficiency" -> "Eficiência • economia"
+                "cooling", "auto_cooling" -> "Resfriamento"
+                "hard" -> "HARD • economia extrema"
+                else -> "Perfil de energia ativo"
+            }
+            prefs.getBoolean("animations_saved", false) -> "Desempenho da interface"
+            else -> "Normal • padrão do Android"
+        }
+        currentModeCard.text = "MODO ATUAL\n$mode\nToque em um perfil para alterar"
     }
 
     private fun buildUi() {
@@ -557,6 +593,19 @@ class MainActivity : Activity() {
             topMargin = dp(12)
             bottomMargin = dp(8)
         })
+        currentModeCard = TextView(this).apply {
+            textSize = 14f
+            setTextColor(0xFFEAF7FF.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
+                intArrayOf(withAlpha(accentColor(), 0x32), 0xFF0D1B2B.toInt())).apply {
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), withAlpha(accentColor(), 0x75))
+            }
+        }
+        root.addView(currentModeCard, LinearLayout.LayoutParams(-1, dp(74)).apply { bottomMargin = dp(10) })
+        updateCurrentModeCard()
 
         val refreshStatusButton = Button(this).apply {
             text = "ATUALIZAR STATUS DO CELULAR"
@@ -579,7 +628,7 @@ class MainActivity : Activity() {
         root.addView(performanceButton, LinearLayout.LayoutParams(-1, dp(54)))
 
         restoreButton = Button(this).apply {
-            text = "RESTAURAR CONFIGURAÇÕES ORIGINAIS"
+            text = "RESTAURAR ANIMAÇÕES / TELA"
             setOnClickListener { setAnimationMode(false); setRefreshRateMode(false) }
         }
         root.addView(restoreButton, LinearLayout.LayoutParams(-1, dp(54)))
@@ -590,6 +639,29 @@ class MainActivity : Activity() {
         }
         root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val quickModesTitle = TextView(this).apply {
+            text = "AÇÕES RÁPIDAS"
+            textSize = 12f
+            letterSpacing = 0.10f
+            setTextColor(accentColor())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(12), 0, dp(6))
+        }
+        root.addView(quickModesTitle)
+        fun quickMode(label: String, profile: String, tint: Int) = Button(this).apply {
+            text = label
+            setTextColor(tint)
+            setOnClickListener { applyUsageProfile(profile) }
+        }
+        root.addView(quickMode("STREAMING\nEquilíbrio", "streaming", 0xFF39C6FF.toInt()), LinearLayout.LayoutParams(-1, dp(58)))
+        root.addView(quickMode("EFICIÊNCIA\nMais autonomia", "efficiency", 0xFF43D9A3.toInt()), LinearLayout.LayoutParams(-1, dp(58)))
+        root.addView(quickMode("RESFRIAMENTO\nReduzir consumo", "cooling", 0xFF58B9FF.toInt()), LinearLayout.LayoutParams(-1, dp(58)))
+        val gameQuickButton = Button(this).apply {
+            text = "MODO JOGO\nPerformance"
+            setTextColor(0xFFFF7FA6.toInt())
+            setOnClickListener { setGameMode("performance") }
+        }
+        root.addView(gameQuickButton, LinearLayout.LayoutParams(-1, dp(58)))
         val gamesStartIndex = root.childCount
         val gameSection = TextView(this).apply {
             text = "JOGOS E INTERFACE"
@@ -658,7 +730,7 @@ class MainActivity : Activity() {
 
         val energyStartIndex = root.childCount
         val energySection = TextView(this).apply {
-            text = "BATERIA, TEMPERATURA E MEMÓRIA"
+            text = "PERFIS DE DESEMPENHO"
             textSize = 12f
             letterSpacing = 0.12f
             setTextColor(accentColor())
@@ -667,7 +739,7 @@ class MainActivity : Activity() {
         }
         root.addView(energySection)
         val mediaTitle = TextView(this).apply {
-            text = "\nMODO STREAMING / ECONOMIA / RESFRIAMENTO"
+            text = "\nESCOLHA UM PERFIL PRONTO"
             textSize = 18f
             setTextColor(0xFFFFFFFF.toInt())
             typeface = Typeface.DEFAULT_BOLD
@@ -852,6 +924,17 @@ class MainActivity : Activity() {
             setLineSpacing(dp(3).toFloat(), 1f)
         }
         root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
+        val chartTitle = TextView(this).apply {
+            text = "HISTÓRICO AO VIVO • ATÉ 5 MIN"
+            textSize = 12f
+            letterSpacing = 0.08f
+            setTextColor(accentColor())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(2), dp(12), dp(2), dp(6))
+        }
+        root.addView(chartTitle)
+        monitorChart = MetricChartView(this)
+        root.addView(monitorChart, LinearLayout.LayoutParams(-1, dp(190)).apply { bottomMargin = dp(12) })
 
         val monitorRefresh = Button(this).apply {
             text = "ATUALIZAR MONITORAMENTO"
@@ -862,7 +945,7 @@ class MainActivity : Activity() {
         root.addView(monitorRefresh, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(16) })
 
         val monitorNote = TextView(this).apply {
-            text = "LIMITAÇÕES DO ANDROID\nCPU e FPS por aplicativo não são expostos universalmente. A temperatura da bateria não representa todos os sensores internos. O histórico contínuo depende de permissões e coleta ativa."
+            text = "LIMITAÇÕES E LEITURAS\nCPU é o uso total do sistema; FPS por aplicativo não é exposto universalmente pelo Android comum. Temperatura é da bateria, pois a XOS pode ocultar outros sensores. O gráfico coleta enquanto Monitoramento está aberto: CPU/RAM em %, temperatura mapeada entre 25–50 °C."
             textSize = 12f
             setTextColor(0xFF91A6BF.toInt())
             setPadding(dp(14), dp(14), dp(14), dp(14))
@@ -889,6 +972,25 @@ class MainActivity : Activity() {
             setPadding(0, 0, 0, dp(14))
         }
         root.addView(settingsDescription)
+        permissionCard = TextView(this).apply {
+            text = "SHIZUKU / PERMISSÕES\nVerificando conexão e autorização…"
+            textSize = 14f
+            setTextColor(0xFFE5F0FF.toInt())
+            setPadding(dp(15), dp(14), dp(15), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(16).toFloat()
+                setColor(0xFF101B2D.toInt())
+                setStroke(dp(1), 0xFF263B55.toInt())
+            }
+        }
+        root.addView(permissionCard, LinearLayout.LayoutParams(-1, dp(82)))
+        val overlayPermissionButton = Button(this).apply {
+            text = "PERMISSÃO DE PAINEL SOBRE OUTROS APPS"
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            }
+        }
+        root.addView(overlayPermissionButton, LinearLayout.LayoutParams(-1, dp(52)))
         reloadButton = Button(this).apply {
             text = "ATUALIZAR LISTA / PERMISSÃO"
             setOnClickListener {
@@ -897,6 +999,16 @@ class MainActivity : Activity() {
             }
         }
         root.addView(reloadButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val restoreAllButton = Button(this).apply {
+            text = "RESTAURAR CONFIGURAÇÕES ORIGINAIS"
+            setOnClickListener {
+                setAnimationMode(false)
+                setRefreshRateMode(false)
+                restoreDpi()
+                restoreUsageProfile()
+            }
+        }
+        root.addView(restoreAllButton, LinearLayout.LayoutParams(-1, dp(54)))
 
         val accentButton = Button(this).apply {
             val names = listOf("Ciano", "Violeta", "Verde")
@@ -941,20 +1053,29 @@ class MainActivity : Activity() {
         }
         root.addView(note)
 
-        // Divide os elementos existentes em quatro telas sem recriar nem remover funções.
+        // Cada destino reúne controles do mesmo propósito, preservando as ações existentes.
+        val monitorStartIndex = root.indexOfChild(monitorHeading)
         for (index in 0 until root.childCount) {
             val child = root.getChildAt(index)
-            val tab = when {
-                child === performanceCard -> "monitor"
+            child.tag = when {
                 index < gamesStartIndex -> "home"
                 index < energyStartIndex -> "games"
-                index < profilesStartIndex -> "home"
+                index < profilesStartIndex -> "profiles"
                 index < toolsStartIndex -> "profiles"
+                index < monitorStartIndex -> "settings"
                 index < settingsStartIndex -> "monitor"
                 else -> "settings"
             }
-            root.getChildAt(index).tag = tab
         }
+        pairButtons(root, "FECHAR OS OUTROS APPS", "ATIVAR MODO DESEMPENHO")
+        pairButtons(root, "STREAMING\nEQUILÍBRIO", "EFICIÊNCIA\nMAIS AUTONOMIA")
+        pairButtons(root, "RESFRIAMENTO\nREDUZIR CONSUMO", "MODO JOGO\nPERFORMANCE")
+        pairButtons(root, "MODO STREAMING • EQUILÍBRIO", "MODO EFICIÊNCIA • ECONOMIA MODERADA")
+        pairButtons(root, "RESFRIAMENTO RÁPIDO • ECONOMIA MÁXIMA", "MODO HARD")
+        pairButtons(root, "USAR DPI RECOMENDADA", "APLICAR DPI PERSONALIZADA")
+        pairButtons(root, "MODO DE JOGO: PERFORMANCE", "MODO DE JOGO: PADRÃO ANDROID")
+        pairButtons(root, "MOSTRAR PAINEL FLUTUANTE", "FECHAR PAINEL FLUTUANTE")
+        pairButtons(root, "ATUALIZAR LISTA / PERMISSÃO", "RESTAURAR CONFIGURAÇÕES ORIGINAIS")
 
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -1051,6 +1172,97 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun pairButtons(root: LinearLayout, firstText: String, secondText: String) {
+        fun findIndex(needle: String) = (0 until root.childCount).firstOrNull { index ->
+            val child = root.getChildAt(index)
+            child is Button && child.text.toString().uppercase(java.util.Locale.ROOT).contains(needle)
+        }
+        val firstIndex = findIndex(firstText) ?: return
+        val secondIndex = findIndex(secondText) ?: return
+        if (firstIndex == secondIndex) return
+        val first = root.getChildAt(firstIndex) as Button
+        val second = root.getChildAt(secondIndex) as Button
+        if (first.tag != second.tag) return
+        val insertAt = minOf(firstIndex, secondIndex)
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            tag = first.tag
+        }
+        root.removeViewAt(maxOf(firstIndex, secondIndex))
+        root.removeViewAt(insertAt)
+        row.addView(first, LinearLayout.LayoutParams(0, dp(64), 1f).apply {
+            rightMargin = dp(4)
+        })
+        row.addView(second, LinearLayout.LayoutParams(0, dp(64), 1f).apply {
+            leftMargin = dp(4)
+        })
+        root.addView(row, insertAt)
+    }
+
+    private inner class MetricChartView(context: Context) : View(context) {
+        private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF0B1726.toInt() }
+        private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF263B55.toInt(); style = Paint.Style.STROKE; strokeWidth = dp(1).toFloat()
+        }
+        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = 0xFF26364A.toInt(); strokeWidth = dp(1).toFloat()
+        }
+        private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(10).toFloat() }
+        private var samples: List<MetricSample> = emptyList()
+
+        fun setSamples(value: List<MetricSample>) {
+            samples = value
+            invalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val inset = dp(12).toFloat()
+            val radius = dp(16).toFloat()
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), radius, radius, backgroundPaint)
+            canvas.drawRoundRect(0f, 0f, width.toFloat(), height.toFloat(), radius, radius, borderPaint)
+            val left = inset
+            val top = inset
+            val right = width - inset
+            val bottom = height - dp(32).toFloat()
+            for (line in 0..3) {
+                val y = top + (bottom - top) * line / 3f
+                canvas.drawLine(left, y, right, y, gridPaint)
+            }
+            if (samples.size < 2) {
+                textPaint.color = 0xFF91A6BF.toInt()
+                canvas.drawText("Aguardando leituras para formar o histórico", left, height / 2f, textPaint)
+            } else {
+                fun plot(color: Int, valueAt: (MetricSample) -> Float?) {
+                    val path = Path()
+                    var started = false
+                    val denom = (samples.size - 1).coerceAtLeast(1)
+                    samples.forEachIndexed { index, sample ->
+                        val value = valueAt(sample)?.coerceIn(0f, 100f) ?: return@forEachIndexed
+                        val x = left + (right - left) * index / denom.toFloat()
+                        val y = bottom - (bottom - top) * value / 100f
+                        if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
+                    }
+                    if (started) {
+                        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                            this.color = color; style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat()
+                            strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+                        }
+                        canvas.drawPath(path, linePaint)
+                    }
+                }
+                plot(0xFF00D4FF.toInt()) { it.cpu?.toFloat() }
+                plot(0xFF54E6A5.toInt()) { it.ram.toFloat() }
+                plot(0xFFFFB45E.toInt()) { it.temperature?.let { c -> ((c - 25f) * 4f).coerceIn(0f, 100f) } }
+            }
+            val legendY = height - dp(12).toFloat()
+            textPaint.color = 0xFF00D4FF.toInt(); canvas.drawText("● CPU", left, legendY, textPaint)
+            textPaint.color = 0xFF54E6A5.toInt(); canvas.drawText("● RAM", left + dp(68), legendY, textPaint)
+            textPaint.color = 0xFFFFB45E.toInt(); canvas.drawText("● Temperatura", left + dp(136), legendY, textPaint)
+        }
+    }
+
     private fun styleControls(view: android.view.View) {
         if (view is Button) {
             val label = view.text.toString().uppercase(java.util.Locale.ROOT)
@@ -1074,20 +1286,29 @@ class MainActivity : Activity() {
             )
             view.elevation = if (primary) dp(2).toFloat() else 0f
             view.minimumHeight = maxOf(view.minimumHeight, dp(48))
-            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAF0F8.toInt())
+            val actionColor = when {
+                label.contains("STREAMING") -> 0xFF65D2FF.toInt()
+                label.contains("EFICIÊNCIA") -> 0xFF69E5B0.toInt()
+                label.contains("RESFRIAMENTO") -> 0xFF83C9FF.toInt()
+                label.contains("MODO JOGO") -> 0xFFFF8CA9.toInt()
+                else -> 0xFFEAF0F8.toInt()
+            }
+            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else actionColor)
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
             view.isAllCaps = false
-            view.setPadding(dp(12), dp(8), dp(12), dp(8))
+            view.gravity = Gravity.CENTER
+            view.maxLines = 2
+            view.setPadding(dp(8), dp(7), dp(8), dp(7))
             val params = view.layoutParams
             if (params is LinearLayout.LayoutParams) {
                 params.bottomMargin = dp(7)
                 view.layoutParams = params
             }
         } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
-                "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "BATERIA, TEMPERATURA E MEMÓRIA",
+                "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "PERFIS DE DESEMPENHO",
                 "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO", "MONITORAMENTO",
-                "CONFIGURAÇÕES", "JOGOS E INTERFACE"
+                "CONFIGURAÇÕES", "JOGOS E INTERFACE", "AÇÕES RÁPIDAS", "HISTÓRICO AO VIVO • ATÉ 5 MIN"
             )) {
             view.background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
@@ -1224,6 +1445,7 @@ class MainActivity : Activity() {
             status.text = "Shizuku indisponível: ${e.message ?: "verifique a configuração"}"
             actionButton.isEnabled = false
         }
+        if (::permissionCard.isInitialized) permissionCard.text = "SHIZUKU / PERMISSÕES\n${status.text}"
     }
 
 
@@ -1269,6 +1491,7 @@ class MainActivity : Activity() {
                     }
                     runOnUiThread {
                         status.text = "Modo desempenho ativado: animações em 0,5x. Deixa a interface mais rápida, mas não garante mais FPS."
+                        if (::currentModeCard.isInitialized) updateCurrentModeCard()
                         Toast.makeText(this, "Modo desempenho ativado", Toast.LENGTH_LONG).show()
                     }
                 } else if (!prefs.getBoolean("animations_saved", false)) {
@@ -1285,6 +1508,7 @@ class MainActivity : Activity() {
                     prefs.edit().putBoolean("animations_saved", false).apply()
                     runOnUiThread {
                         status.text = "Animações originais restauradas."
+                        if (::currentModeCard.isInitialized) updateCurrentModeCard()
                         Toast.makeText(this, "Configurações restauradas", Toast.LENGTH_LONG).show()
                     }
                 }
@@ -1666,7 +1890,9 @@ class MainActivity : Activity() {
                     if (result.first == 0) stopped++
                 }
 
+                prefs.edit().putString("active_usage_profile", profile).apply()
                 runOnUiThread {
+                    if (::currentModeCard.isInitialized) updateCurrentModeCard()
                     status.text = when (profile) {
                         "streaming" -> "Streaming ativado: equilíbrio, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage. A XOS pode ignorar a preferência de Hz."
                         "efficiency" -> "Eficiência ativada: economia de bateria, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage."
@@ -1799,8 +2025,11 @@ class MainActivity : Activity() {
                         editor.remove("hard_original_${namespace}_$key")
                     }
                     for (index in 0 until count) editor.remove("usage_cpu_max_$index")
-                    editor.apply()
-                    runOnUiThread { status.text = "Perfil restaurado. Políticas CPU restauradas: $cpuRestored. Apps encerrados não são reabertos automaticamente." }
+                    editor.remove("active_usage_profile").apply()
+                    runOnUiThread {
+                        if (::currentModeCard.isInitialized) updateCurrentModeCard()
+                        status.text = "Perfil restaurado. Políticas CPU restauradas: $cpuRestored. Apps encerrados não são reabertos automaticamente."
+                    }
                 } else {
                     runOnUiThread {
                         status.text = "Restauração incompleta (${failures.size} item(ns)). Os valores originais continuam salvos; corrija o acesso Shizuku e tente restaurar novamente."
