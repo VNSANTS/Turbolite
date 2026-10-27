@@ -153,7 +153,7 @@ class OverlayService : Service() {
                         previousCpuTotal = total
                         previousCpuIdle = idle
                     }
-                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk '\\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
+                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
                     val tp = Shizuku.newProcess(arrayOf("sh", "-c", tempCmd), null, null)
                     val rawTemp = tp.inputStream.bufferedReader().use { it.readText().trim() }
                     tp.waitFor()
