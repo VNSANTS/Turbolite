@@ -704,6 +704,19 @@ class MainActivity : Activity() {
         executor.execute {
             try {
                 val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                // Antes de trocar de perfil, remove qualquer limite de CPU aplicado pelo próprio TurboLite.
+                val previousCpuCount = prefs.getInt("usage_cpu_policy_count", 0)
+                for (index in 0 until previousCpuCount) {
+                    val savedCpu = prefs.getString("usage_cpu_max_$index", null) ?: continue
+                    val splitCpu = savedCpu.lastIndexOf('=')
+                    if (splitCpu > 0) {
+                        val savedPath = savedCpu.substring(0, splitCpu)
+                        val savedValue = savedCpu.substring(splitCpu + 1).toLongOrNull()
+                        if (savedValue != null && savedPath.matches(Regex("/sys/devices/system/cpu/cpufreq/policy[0-9]+/scaling_max_freq"))) {
+                            runShell("echo $savedValue > $savedPath 2>&1")
+                        }
+                    }
+                }
                 if (!prefs.getBoolean("usage_profile_saved", false)) {
                     val lowPower = runShell("settings get global low_power").second
                     val peak = runShell("settings get system peak_refresh_rate").second
