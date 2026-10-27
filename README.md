@@ -11,7 +11,7 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 ## Funções atuais
 - **Central de Jogo:** abre o jogo selecionado; combina modo Performance do Android, animações rápidas e preferência de taxa de tela para uma sessão competitiva; oferece também uma sessão longa com economia e modo de bateria; inclui foco Não Perturbe, com restauração manual do filtro anterior, e atalho para os indicadores flutuantes.
 - **Perfis sem fechamento implícito:** streaming, eficiência e resfriamento solicitam ajustes e mantêm apps abertos. Somente o perfil HARD pede confirmação e solicita parada de outros apps de usuário.
-- **Fechar outros apps:** solicita force-stop dos apps de usuário selecionados, preservando o TurboLite e o app escolhido.
+- **Fechar outros apps:** após confirmação, solicita force-stop dos apps de usuário selecionados, preservando o TurboLite e o app escolhido.
 - **Modo desempenho reversível:** salva os valores atuais das três escalas de animação do Android e altera para 0,5x.
 - **Preferência de Hz máxima:** tenta ler os modos de tela expostos pelo Android e aplicar o maior refresh rate via configurações do sistema, guardando os valores anteriores. O XOS pode ignorar a solicitação; maior Hz consome mais bateria.
 - **Restaurar configurações originais:** recupera as animações e as preferências de taxa de atualização guardadas. Não restaura apps que foram fechados.
