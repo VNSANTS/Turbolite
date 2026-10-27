@@ -11,8 +11,8 @@ android {
         applicationId = "com.vnsants.turbolite"
         minSdk = 26
         targetSdk = 28
-        versionCode = 1
-        versionName = "0.1-beta"
+        versionCode = 2
+        versionName = "0.2-beta"
     }
 
     compileOptions {
