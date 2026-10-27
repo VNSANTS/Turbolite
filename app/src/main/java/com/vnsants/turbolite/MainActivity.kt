@@ -1,6 +1,9 @@
 package com.vnsants.turbolite
 
 import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -11,6 +14,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
+import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import rikka.shizuku.Shizuku
@@ -23,6 +27,8 @@ class MainActivity : Activity() {
     private lateinit var reloadButton: Button
     private lateinit var performanceButton: Button
     private lateinit var restoreButton: Button
+    private lateinit var overlayButton: Button
+    private lateinit var stopOverlayButton: Button
     private lateinit var keepSpinner: Spinner
     private var userApps: List<ApplicationInfo> = emptyList()
     private var keepPackages: List<String> = emptyList()
@@ -43,6 +49,8 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         Shizuku.addRequestPermissionResultListener(permissionListener)
         buildUi()
+        getSharedPreferences("turbolite_overlay", MODE_PRIVATE).edit()
+            .putBoolean("show_fps", false).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
         loadAppsToKeep()
         updatePermissionState()
     }
@@ -108,6 +116,44 @@ class MainActivity : Activity() {
         }
         root.addView(restoreButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val overlayTitle = TextView(this).apply {
+            text = "\nPAINEL FLUTUANTE"
+            textSize = 18f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        root.addView(overlayTitle)
+
+        overlayButton = Button(this).apply {
+            text = "MOSTRAR PAINEL FLUTUANTE"
+            setOnClickListener { startOverlay() }
+        }
+        root.addView(overlayButton, LinearLayout.LayoutParams(-1, dp(52)))
+
+        stopOverlayButton = Button(this).apply {
+            text = "FECHAR PAINEL FLUTUANTE"
+            setOnClickListener { stopService(Intent(this@MainActivity, OverlayService::class.java)) }
+        }
+        root.addView(stopOverlayButton, LinearLayout.LayoutParams(-1, dp(48)))
+
+        fun addMetricToggle(label: String, key: String, defaultValue: Boolean) {
+            val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+            val toggle = CheckBox(this).apply {
+                text = label
+                textSize = 14f
+                setTextColor(0xFFE2E8F0.toInt())
+                isChecked = prefs.getBoolean(key, defaultValue)
+                setOnCheckedChangeListener { _, checked ->
+                    prefs.edit().putBoolean(key, checked).apply()
+                }
+            }
+            root.addView(toggle)
+        }
+        addMetricToggle("Mostrar RAM", "show_ram", true)
+        addMetricToggle("Mostrar ping (teste para 1.1.1.1)", "show_ping", false)
+        addMetricToggle("Mostrar FPS (experimental; leitura real ainda pendente)", "show_fps", false)
+
         reloadButton = Button(this).apply {
             text = "ATUALIZAR LISTA / PERMISSÃO"
             setOnClickListener {
@@ -136,6 +182,17 @@ class MainActivity : Activity() {
 
         val scroll = ScrollView(this).apply { addView(root) }
         setContentView(scroll)
+    }
+
+    private fun startOverlay() {
+        if (!Settings.canDrawOverlays(this)) {
+            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+            startActivity(intent)
+            Toast.makeText(this, "Autorize 'sobrepor a outros apps' e toque no botão novamente.", Toast.LENGTH_LONG).show()
+            return
+        }
+        startService(Intent(this, OverlayService::class.java))
+        Toast.makeText(this, "Painel flutuante iniciado", Toast.LENGTH_SHORT).show()
     }
 
     private fun loadAppsToKeep() {
