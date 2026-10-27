@@ -78,7 +78,7 @@ class OverlayService : Service() {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(18).toFloat()
                 setColor(0xF20B1220.toInt())
-                setStroke(dp(1), 0xFF29435A.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x75))
             }
             elevation = dp(8).toFloat()
             minimumWidth = minOf(dp(220), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(180)))
@@ -86,9 +86,8 @@ class OverlayService : Service() {
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            isClickable = true
-            isFocusable = true
-            contentDescription = "Arrastar painel TurboLite"
+            isClickable = false
+            isFocusable = false
         }
         val mark = android.widget.ImageView(this).apply {
             setImageResource(R.drawable.ic_turbolite)
@@ -107,10 +106,10 @@ class OverlayService : Service() {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         })
         brand.addView(TextView(this).apply {
-            text = "PAINEL DE JOGO"
+            text = "AO VIVO • ARRASTE PARA MOVER"
             textSize = 9f
             letterSpacing = 0.08f
-            setTextColor(0xFF7FA8BF.toInt())
+            setTextColor(accentColor())
         })
         header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
         val close = TextView(this).apply {
@@ -121,17 +120,17 @@ class OverlayService : Service() {
             contentDescription = "Fechar painel flutuante"
             isClickable = true
             isFocusable = true
-            minWidth = dp(44)
-            minHeight = dp(44)
+            minWidth = dp(48)
+            minHeight = dp(48)
             setOnClickListener { stopSelf() }
             background = android.graphics.drawable.RippleDrawable(
-                android.content.res.ColorStateList.valueOf(0x304FC3F7),
+                android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x50)),
                 GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(0x00000000) },
                 null
             )
         }
         header.addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
-        root.addView(header, LinearLayout.LayoutParams(-1, dp(44)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(48)))
 
         val divider = android.view.View(this).apply { setBackgroundColor(0xFF26384B.toInt()) }
         root.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
@@ -200,6 +199,17 @@ class OverlayService : Service() {
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    private fun accentColor(): Int = when (
+        getSharedPreferences("turbolite_settings", MODE_PRIVATE).getString("accent_theme", "cyan")
+    ) {
+        "violet" -> 0xFFB388FF.toInt()
+        "green" -> 0xFF54E6A5.toInt()
+        else -> 0xFF00D4FF.toInt()
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or (alpha.coerceIn(0, 255) shl 24)
 
     private fun updateRam() {
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
