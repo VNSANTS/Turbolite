@@ -372,7 +372,7 @@ class MainActivity : Activity() {
                             .putBoolean(savedKey, true).apply()
                     }
                     val dump = runShell("dumpsys display")
-                    val rates = Regex("refreshRate=([0-9]+(?:\\\\.[0-9]+)?)")
+                    val rates = Regex("refreshRate=([0-9]+(?:\\.[0-9]+)?)")
                         .findAll(dump.second).mapNotNull { it.groupValues[1].toFloatOrNull() }
                         .filter { it in 30f..240f }.toList()
                     val maxRate = rates.maxOrNull()
