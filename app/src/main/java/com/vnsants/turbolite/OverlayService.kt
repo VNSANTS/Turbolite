@@ -31,12 +31,17 @@ class OverlayService : Service() {
     @Volatile private var tempText = "Temp: indisponível"
     private var previousCpuTotal = 0L
     private var previousCpuIdle = 0L
+    private var lastStatsMeasureMs = 0L
 
     private val refresh = object : Runnable {
         override fun run() {
             updateRam()
             panel?.text = buildText()
-            measureDeviceStats()
+            val nowMs = SystemClock.elapsedRealtime()
+            if (nowMs - lastStatsMeasureMs >= 5000L) {
+                lastStatsMeasureMs = nowMs
+                measureDeviceStats()
+            }
             handler.postDelayed(this, 2000)
         }
     }
@@ -174,7 +179,7 @@ class OverlayService : Service() {
             val list = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys SurfaceFlinger --list | grep -F '${pkg}' | head -n 6"), null, null)
             val layers = list.inputStream.bufferedReader().use { it.readLines() }
             list.waitFor()
-            val now = SystemClock.elapsedRealtimeNanos()
+            val now = System.nanoTime()
             for (layer in layers) {
                 val safeLayer = layer.replace("'", "'\\''")
                 val p = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys SurfaceFlinger --latency '${safeLayer}'"), null, null)
@@ -182,16 +187,16 @@ class OverlayService : Service() {
                 p.waitFor()
                 val timestamps = output.lineSequence().drop(1).mapNotNull { row ->
                     val cols = row.trim().split(Regex("\\s+"))
-                    cols.getOrNull(2)?.toLongOrNull()?.takeIf { it > 0L }
+                    cols.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
                 }.toList()
                 if (timestamps.size >= 2) {
                     val recent = timestamps.distinct().count { it <= now && it >= now - 1_000_000_000L }
-                    if (recent > 0) return "FPS: $recent"
+                    if (recent > 0) return "FPS≈ $recent (estimativa)"
                 }
             }
-            "FPS: indisponível"
+            "FPS≈ indisponível"
         } catch (_: Exception) {
-            "FPS: indisponível"
+            "FPS≈ indisponível"
         }
     }
 
