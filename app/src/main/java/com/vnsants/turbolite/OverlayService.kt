@@ -304,16 +304,13 @@ class OverlayService : Service() {
             worker.execute {
                 try {
                     pingText = try {
-                        if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            "Ping: requer Shizuku"
-                        } else {
+                        val shizukuAvailable = try { Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED } catch (_: Exception) { false }
+                        if (shizukuAvailable) {
                             val (exitCode, output) = runShell("ping -c 1 -W 1 1.1.1.1")
                             val match = Regex("time[=<]([0-9.]+)").find(output)
-                            if (exitCode == 0 && match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
-                        }
-                    } catch (_: Exception) {
-                        "Ping: indisponível"
-                    }
+                            if (exitCode == 0 && match != null) "Ping: ${match.groupValues[1]} ms" else measureConnectionLatency()
+                        } else measureConnectionLatency()
+                    } catch (_: Exception) { measureConnectionLatency() }
                 } finally {
                     pingMeasureBusy = false
                 }
@@ -324,6 +321,13 @@ class OverlayService : Service() {
         }
     }
 
+    private fun measureConnectionLatency(): String {
+        return try {
+            val start = SystemClock.elapsedRealtime()
+            java.net.Socket().use { socket -> socket.connect(java.net.InetSocketAddress("1.1.1.1", 443), 1800) }
+            "Ping: ~${SystemClock.elapsedRealtime() - start} ms (conexão)"
+        } catch (_: Exception) { "Ping: sem resposta de rede" }
+    }
     private fun measureDeviceStats() {
         if (statsMeasureBusy) return
         statsMeasureBusy = true
