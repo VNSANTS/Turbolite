@@ -71,17 +71,20 @@ class OverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+        val overlayPrefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+        val appearance = overlayPrefs.getString("appearance", "glass") ?: "glass"
+        val minimal = appearance == "minimal"
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(12))
+            setPadding(if (minimal) dp(9) else dp(12), if (minimal) dp(6) else dp(10), if (minimal) dp(9) else dp(12), if (minimal) dp(7) else dp(12))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(18).toFloat()
-                setColor(0xF20B1220.toInt())
-                setStroke(dp(1), withAlpha(accentColor(), 0x75))
+                cornerRadius = dp(if (minimal) 10 else 18).toFloat()
+                setColor(if (minimal) 0xE6101724.toInt() else 0xF20B1220.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), if (minimal) 0x45 else 0x75))
             }
-            elevation = dp(8).toFloat()
-            minimumWidth = minOf(dp(220), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(180)))
+            elevation = dp(if (minimal) 4 else 8).toFloat()
+            minimumWidth = minOf(dp(if (minimal) 120 else 220), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(120)))
         }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -131,21 +134,62 @@ class OverlayService : Service() {
         }
         header.addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
         root.addView(header, LinearLayout.LayoutParams(-1, dp(48)))
+        if (minimal) header.visibility = android.view.View.GONE
 
         val divider = android.view.View(this).apply { setBackgroundColor(0xFF26384B.toInt()) }
         root.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
             topMargin = dp(7)
             bottomMargin = dp(8)
         })
+        if (minimal) divider.visibility = android.view.View.GONE
         metricsText = TextView(this).apply {
-            textSize = 12f
-            setTextColor(0xFFDDE8F2.toInt())
+            textSize = if (minimal) 11f else 12f
+            setTextColor(if (minimal) 0xFFF4F8FF.toInt() else 0xFFDDE8F2.toInt())
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setLineSpacing(dp(3).toFloat(), 1f)
             setPadding(dp(3), 0, dp(3), 0)
         }
         root.addView(metricsText, LinearLayout.LayoutParams(-1, -2))
 
+        root.setOnTouchListener(object : android.view.View.OnTouchListener {
+            private var resizing = false
+            private var downRawX = 0f
+            private var downRawY = 0f
+            private var initialWidth = 0
+            private var initialHeight = 0
+            private var initialX = 0
+            private var initialY = 0
+            override fun onTouch(v: android.view.View, event: MotionEvent): Boolean {
+                val params = root.layoutParams as? WindowManager.LayoutParams ?: return false
+                val edge = dp(22)
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        val localX = event.x
+                        val localY = event.y
+                        resizing = localX >= root.width - edge || localY >= root.height - edge
+                        if (!resizing) return false
+                        downRawX = event.rawX; downRawY = event.rawY
+                        initialWidth = root.width.coerceAtLeast(dp(140))
+                        initialHeight = root.height.coerceAtLeast(dp(50))
+                        initialX = params.x; initialY = params.y
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        if (!resizing) return false
+                        val maxWidth = (resources.displayMetrics.widthPixels - dp(12)).coerceAtLeast(dp(140))
+                        val maxHeight = (resources.displayMetrics.heightPixels - dp(80)).coerceAtLeast(dp(70))
+                        params.width = (initialWidth + (event.rawX - downRawX).toInt()).coerceIn(dp(140), maxWidth)
+                        params.height = (initialHeight + (event.rawY - downRawY).toInt()).coerceIn(dp(70), maxHeight)
+                        params.x = initialX.coerceIn(0, (resources.displayMetrics.widthPixels - params.width).coerceAtLeast(0))
+                        params.y = initialY.coerceIn(0, (resources.displayMetrics.heightPixels - params.height).coerceAtLeast(0))
+                        try { windowManager.updateViewLayout(root, params) } catch (_: Exception) { return false }
+                        return true
+                    }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { val wasResizing = resizing; resizing = false; return wasResizing }
+                }
+                return resizing
+            }
+        })
         header.setOnTouchListener(object : android.view.View.OnTouchListener {
             private var startX = 0
             private var startY = 0
@@ -186,7 +230,7 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            width = minOf(dp(280), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(200)))
+            width = minOf(dp(if (minimal) 180 else 280), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(140)))
             x = dp(12)
             y = dp(100)
         }
@@ -392,6 +436,9 @@ class OverlayService : Service() {
     private fun renderMetrics() {
         val text = metricsText ?: return
         text.text = buildText()
+        val minimal = getSharedPreferences("turbolite_overlay", MODE_PRIVATE).getString("appearance", "glass") == "minimal"
+        text.gravity = if (minimal) Gravity.CENTER else Gravity.START
+        text.typeface = Typeface.create(if (minimal) "sans-serif" else "sans-serif-medium", if (minimal) Typeface.NORMAL else Typeface.MEDIUM)
     }
 
     override fun onDestroy() {
