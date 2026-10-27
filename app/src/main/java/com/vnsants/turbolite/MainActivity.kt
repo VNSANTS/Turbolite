@@ -452,7 +452,7 @@ class MainActivity : Activity() {
         root.addView(status)
 
         val performanceCard = TextView(this).apply {
-            text = "STATUS DO SISTEMA\\nLendo dados do aparelho…"
+            text = "STATUS DO SISTEMA\nLendo dados do aparelho…"
             textSize = 14f
             setTextColor(0xFFE2E8F0.toInt())
             typeface = Typeface.MONOSPACE
