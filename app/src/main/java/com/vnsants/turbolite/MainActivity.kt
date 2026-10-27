@@ -1330,11 +1330,11 @@ class MainActivity : Activity() {
                         .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
                 } else line
             }
-            val primary = label.contains("FECHAR OS OUTROS APPS") ||
-                label.contains("APLICAR PERFIL SELECIONADO") ||
+            val primary = label.contains("APLICAR PERFIL SELECIONADO") ||
                 label.contains("ATIVAR MODO HARD") ||
                 label.contains("SALVAR / ATUALIZAR PERFIL")
-            val caution = label.contains("HARD") || label.contains("EXCLUIR")
+            val caution = label.contains("HARD") || label.contains("EXCLUIR") ||
+                label.contains("FECHAR OS OUTROS APPS") || label.contains("FECHAR APPS")
             val shape = GradientDrawable().apply {
                 cornerRadius = dp(14).toFloat()
                 setColor(if (primary) accentColor() else 0xFF172233.toInt())
@@ -1359,13 +1359,13 @@ class MainActivity : Activity() {
                 params.bottomMargin = dp(7)
                 view.layoutParams = params
             }
-        } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
+        } else if (view is TextView && view.text.toString().trim().uppercase(java.util.Locale.ROOT) in setOf(
                 "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "PERFIS DE DESEMPENHO",
                 "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO", "MONITORAMENTO",
                 "CONFIGURAÇÕES", "AÇÕES RÁPIDAS", "HISTÓRICO AO VIVO • ATÉ 5 MIN",
-                "DPI / DENSIDADE PARA JOGOS", "ESCOLHA UM PERFIL PRONTO", "PAINEL FLUTUANTE"
+                "DPI / DENSIDADE PARA JOGOS", "ESCOLHA UM PERFIL PRONTO", "PAINEL FLUTUANTE", "CENTRAL DE JOGO"
             )) {
-            val heading = view.text.toString().uppercase(java.util.Locale.ROOT)
+            val heading = view.text.toString().trim().uppercase(java.util.Locale.ROOT)
             view.text = when (heading) {
                 "CONTROLE RÁPIDO" -> "Controle rápido"
                 "JOGOS E INTERFACE" -> "Jogos e interface"
@@ -1378,6 +1378,7 @@ class MainActivity : Activity() {
                 "DPI / DENSIDADE PARA JOGOS" -> "DPI para jogos"
                 "ESCOLHA UM PERFIL PRONTO" -> "Perfis prontos"
                 "PAINEL FLUTUANTE" -> "Painel flutuante"
+                "CENTRAL DE JOGO" -> "Central de jogo"
                 else -> "Histórico • até 5 min"
             }
             view.background = null
@@ -1885,7 +1886,20 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun confirmStopApps(action: String, onConfirm: () -> Unit) {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("$action?")
+            .setMessage("O Android vai solicitar a parada de apps de usuário, exceto o TurboLite e o app selecionado. Isso pode interromper música, downloads, VPN e notificações, e pode aumentar o tempo de reabertura. Nenhum dado, cache ou login será apagado.")
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("CONTINUAR") { _, _ -> onConfirm() }
+            .show()
+    }
+
     private fun optimize() {
+        confirmStopApps("Fechar outros apps") { optimizeConfirmed() }
+    }
+
+    private fun optimizeConfirmed() {
         if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != PackageManager.PERMISSION_GRANTED) {
             updatePermissionState()
             return
@@ -2075,6 +2089,10 @@ class MainActivity : Activity() {
     }
 
     private fun cleanRamAndBackgroundApps() {
+        confirmStopApps("Fechar apps selecionáveis") { cleanRamAndBackgroundAppsConfirmed() }
+    }
+
+    private fun cleanRamAndBackgroundAppsConfirmed() {
         if (!hasShizukuPermission()) {
             updatePermissionState()
             Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
