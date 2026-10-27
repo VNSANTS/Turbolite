@@ -148,7 +148,7 @@ class OverlayService : Service() {
                         previousCpuTotal = total
                         previousCpuIdle = idle
                     }
-                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do v=\$(cat \$f 2>/dev/null); case \$v in ''|*[!0-9]*) ;; *) if [ \$v -gt 1000 ]; then echo \$v; exit; fi ;; esac; done"
+                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk '\\$1 ~ /^[0-9]+$/ && \\$1 > 1000 { printf \"%.0f\\n\", \\$1; exit }'"
                     val tp = Shizuku.newProcess(arrayOf("sh", "-c", tempCmd), null, null)
                     val rawTemp = tp.inputStream.bufferedReader().use { it.readText().trim() }
                     tp.waitFor()
@@ -182,7 +182,7 @@ class OverlayService : Service() {
                 p.waitFor()
                 val timestamps = output.lineSequence().drop(1).mapNotNull { row ->
                     val cols = row.trim().split(Regex("\\s+"))
-                    cols.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
+                    cols.getOrNull(2)?.toLongOrNull()?.takeIf { it > 0L }
                 }.toList()
                 if (timestamps.size >= 2) {
                     val recent = timestamps.distinct().count { it <= now && it >= now - 1_000_000_000L }
