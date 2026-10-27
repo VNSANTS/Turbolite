@@ -50,7 +50,7 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 
 ## Configuração Android
 - `minSdk 26`, `targetSdk 34` e `compileSdk 35`; o alvo 34 habilita o comportamento de compatibilidade do Android 14.
-- Usa Shizuku API/provider 13.1.5; ações privilegiadas continuam limitadas ao que o serviço Shizuku (ADB ou root) autoriza no aparelho. O TurboLite não obtém root.
+- Usa Shizuku API/provider 13.1.5 com UserService para executar comandos; ações privilegiadas continuam limitadas ao que o serviço Shizuku autoriza no aparelho. Com a inicialização padrão por depuração sem fio, a identidade é shell/ADB; o TurboLite não obtém root.
 
 ## Build automático
 O GitHub Actions compila o APK de depuração quando há mudanças no app e permite execução manual em Actions → Build TurboLite Android Beta → Run workflow. O arquivo `TurboLite-Beta.apk` fica disponível no artifact `TurboLite-Beta-APK` por 14 dias.

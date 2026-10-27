@@ -160,32 +160,8 @@ class OverlayService : Service() {
         }
     }
 
-    private fun runShell(command: String): Pair<Int, String> {
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-        val stdout = StringBuilder()
-        val stderr = StringBuilder()
-        val outReader = Thread({ process.inputStream.bufferedReader().use { stdout.append(it.readText()) } }, "turbolite-overlay-stdout")
-            .apply { isDaemon = true; start() }
-        val errReader = Thread({ process.errorStream.bufferedReader().use { stderr.append(it.readText()) } }, "turbolite-overlay-stderr")
-            .apply { isDaemon = true; start() }
-        try {
-            if (!process.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
-                throw java.util.concurrent.TimeoutException("Comando de telemetria excedeu 8 segundos")
-            }
-            outReader.join(1_000)
-            errReader.join(1_000)
-            return process.exitValue() to (stdout.toString() + "\n" + stderr.toString()).trim()
-        } catch (e: InterruptedException) {
-            process.destroy()
-            process.destroyForcibly()
-            Thread.currentThread().interrupt()
-            throw e
-        } catch (e: Exception) {
-            process.destroy()
-            process.destroyForcibly()
-            throw e
-        }
-    }
+    private fun runShell(command: String): Pair<Int, String> =
+        ShizukuCommandClient.run(this, command, 8_000L)
 
     private fun measurePing() {
         worker.execute {

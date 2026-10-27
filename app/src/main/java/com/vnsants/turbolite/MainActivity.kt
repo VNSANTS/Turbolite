@@ -1201,33 +1201,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun runShell(command: String): Pair<Int, String> {
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-        val stdout = StringBuilder()
-        val stderr = StringBuilder()
-        val outReader = Thread({ process.inputStream.bufferedReader().use { stdout.append(it.readText()) } }, "turbolite-shell-stdout")
-            .apply { isDaemon = true; start() }
-        val errReader = Thread({ process.errorStream.bufferedReader().use { stderr.append(it.readText()) } }, "turbolite-shell-stderr")
-            .apply { isDaemon = true; start() }
-        try {
-            if (!process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)) {
-                throw java.util.concurrent.TimeoutException("O comando Shizuku excedeu 10 segundos")
-            }
-            outReader.join(1_000)
-            errReader.join(1_000)
-            val output = (stdout.toString() + "\n" + stderr.toString()).trim()
-            return Pair(process.exitValue(), output)
-        } catch (e: InterruptedException) {
-            process.destroy()
-            process.destroyForcibly()
-            Thread.currentThread().interrupt()
-            throw e
-        } catch (e: Exception) {
-            process.destroy()
-            process.destroyForcibly()
-            throw e
-        }
-    }
+    private fun runShell(command: String): Pair<Int, String> =
+        ShizukuCommandClient.run(this, command, 10_000L)
 
     private fun setAnimationMode(enable: Boolean) {
         if (!hasShizukuPermission()) {
