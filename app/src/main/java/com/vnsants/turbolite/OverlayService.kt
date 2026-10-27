@@ -360,24 +360,22 @@ class OverlayService : Service() {
                     }
 
                     if (prefs.getBoolean("show_temp", false)) {
-                        var temperature: Float? = null
-                        if (hasShizuku) {
-                            val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
-                            val (tempExitCode, rawTemp) = runShell(tempCmd)
-                            temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw ->
-                                when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null }
-                            } else null
-                        }
-                        if (temperature == null) {
-                            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                            val tenths = battery?.getIntExtra("temperature", -1) ?: -1
-                            if (tenths > 0) temperature = tenths / 10f
-                        }
-                        tempText = if (temperature != null && temperature in 0f..120f) {
-                            "Temp: ${String.format(java.util.Locale.US, "%.1f", temperature)}°C (bateria/sensor)"
-                        } else {
-                            "Temp: indisponível"
-                        }
+                        try {
+                            var temperature: Float? = null
+                            if (hasShizuku) {
+                                try {
+                                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk \\$1\u0020~\u0020/^[0-9]+(\\\\.[0-9]+)?$/\u0020{\u0020v=\\$1+0;\u0020if\u0020(v>max)\u0020max=v\u0020}\u0020END\u0020{\u0020if\u0020(max>0)\u0020printf\u0020\\\"%.1f\\\\n\\\",\u0020max\u0020}"
+                                    val (tempExitCode, rawTemp) = runShell(tempCmd)
+                                    temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw -> when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null } } else null
+                                } catch (_: Exception) { temperature = null }
+                            }
+                            if (temperature == null) {
+                                val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                                val tenths = battery?.getIntExtra("temperature", -1) ?: -1
+                                if (tenths > 0) temperature = tenths / 10f
+                            }
+                            tempText = if (temperature != null && temperature in 0f..120f) "Temp: ${String.format(java.util.Locale.US, "%.1f", temperature)}°C (bateria/sensor)" else "Temp: indisponível"
+                        } catch (_: Exception) { tempText = "Temp: indisponível" }
                     }
 
                     if (prefs.getBoolean("show_fps", false)) {
