@@ -1,6 +1,12 @@
-# TurboLite Beta 0.1
+# TurboLite Beta 0.2
 
 Aplicativo Android experimental para solicitar a parada forçada de aplicativos instalados pelo usuário, sem root, usando Shizuku com privilégios ADB.
+
+## Interface e identidade visual
+- Interface escura com identidade gamer profissional, azul profundo e ciano, inspirada na opção 3 aprovada para a marca.
+- Tela inicial reorganizada com cabeçalho da marca, status do sistema, controles principais e perfis personalizados depois das ações rápidas.
+- Cartão de status mostra RAM, CPU estimada, bateria e temperatura da bateria quando disponível; é atualizado manualmente pelo botão.
+- Perfis personalizados permitem nome, emoji e seleção de funções, salvando os perfis localmente no aparelho.
 
 ## Funções atuais
 - **Fechar outros apps:** solicita force-stop dos apps de usuário selecionados, preservando o TurboLite e o app escolhido.
@@ -32,12 +38,12 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 1. Instale o Shizuku pela fonte oficial: https://shizuku.rikka.app/
 2. No Android 14, ative Opções do desenvolvedor e Depuração sem fio.
 3. Inicie o serviço do Shizuku pela depuração sem fio. Após reiniciar o telefone, pode ser necessário iniciar novamente.
-4. Baixe o APK no workflow **Build TurboLite Android Beta**, na aba Actions deste repositório, na seção Artifacts.
+4. Abra o workflow **Build TurboLite Android Beta**, na aba Actions deste repositório, e baixe o artifact `TurboLite-beta-debug-apk` da execução mais recente concluída com sucesso.
 5. Instale o APK, abra o TurboLite e conceda a permissão do Shizuku.
 6. Selecione o jogo/app que quer manter e toque em **FECHAR OS OUTROS APPS**.
 
 ## Build automático
-O GitHub Actions compila o APK de depuração em cada push e também permite execução manual em Actions → Build TurboLite Android Beta → Run workflow. O arquivo gerado é `app/build/outputs/apk/debug/app-debug.apk` e fica disponível como artifact por 14 dias.
+O GitHub Actions compila o APK de depuração quando há mudanças no app e permite execução manual em Actions → Build TurboLite Android Beta → Run workflow. O arquivo `app-debug.apk` fica disponível no artifact `TurboLite-beta-debug-apk` por 14 dias.
 
 
 Última configuração: workflow de build automático definido em `.github/workflows/build-android.yml`.
