@@ -55,11 +55,29 @@ class MainActivity : Activity() {
                         val raw = Regex("(?m)^\\s*temperature:\\s*(\\d+)").find(batteryDump)?.groupValues?.get(1)?.toIntOrNull()
                         val batteryC = raw?.let { if (it > 100) it / 10f else it.toFloat() }
                         val thermalDump = runShell("dumpsys thermalservice").second
-                        val thermalValues = Regex("mValue=([0-9]+(?:\\.[0-9]+)?)")
+                        val serviceValues = Regex("mValue=([0-9]+(?:\\.[0-9]+)?)")
                             .findAll(thermalDump).mapNotNull { it.groupValues[1].toFloatOrNull() }
-                            .filter { it in 35f..120f }.toList()
+                            .mapNotNull { raw ->
+                                when {
+                                    raw >= 1000f -> raw / 1000f
+                                    raw >= 100f -> raw / 10f
+                                    raw in 0f..120f -> raw
+                                    else -> null
+                                }
+                            }.filter { it in 25f..120f }.toList()
+                        val zoneDump = runShell("for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done").second
+                        val zoneValues = zoneDump.lineSequence().mapNotNull { it.trim().toFloatOrNull() }
+                            .mapNotNull { raw ->
+                                when {
+                                    raw >= 1000f -> raw / 1000f
+                                    raw >= 100f -> raw / 10f
+                                    raw in 0f..120f -> raw
+                                    else -> null
+                                }
+                            }.filter { it in 25f..120f }.toList()
+                        val thermalValues = serviceValues + zoneValues
                         val hot = (batteryC != null && batteryC >= 42f) || thermalValues.any { it >= 45f }
-                        val cool = batteryC != null && batteryC <= 39f && thermalValues.none { it >= 42f }
+                        val cool = (batteryC != null && batteryC <= 39f) && thermalValues.none { it >= 42f }
                         runOnUiThread {
                             if (!::autoThermalCheck.isInitialized || !autoThermalCheck.isChecked) return@runOnUiThread
                             val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
@@ -73,6 +91,10 @@ class MainActivity : Activity() {
                                 restoreUsageProfile()
                             } else if (batteryC != null) {
                                 status.text = "Monitor térmico ativo • bateria: ${String.format(java.util.Locale.US, "%.1f", batteryC)} °C"
+                            } else if (thermalValues.isNotEmpty()) {
+                                status.text = "Monitor térmico ativo • sensor: ${String.format(java.util.Locale.US, "%.1f", thermalValues.maxOrNull() ?: 0f)} °C"
+                            } else {
+                                status.text = "Temperatura indisponível: a XOS não expôs sensores ao Shizuku. O monitor automático não consegue detectar aquecimento neste momento."
                             }
                         }
                     } catch (_: Exception) {
