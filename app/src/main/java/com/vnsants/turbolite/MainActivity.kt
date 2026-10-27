@@ -11,6 +11,8 @@ import android.os.Bundle
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
+import android.text.InputType
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Spinner
@@ -30,6 +32,9 @@ class MainActivity : Activity() {
     private lateinit var refreshRateButton: Button
     private lateinit var overlayButton: Button
     private lateinit var stopOverlayButton: Button
+    private lateinit var dpiInput: EditText
+    private lateinit var dpiApplyButton: Button
+    private lateinit var dpiRestoreButton: Button
     private lateinit var keepSpinner: Spinner
     private var userApps: List<ApplicationInfo> = emptyList()
     private var keepPackages: List<String> = emptyList()
@@ -124,6 +129,49 @@ class MainActivity : Activity() {
             setOnClickListener { setRefreshRateMode(true) }
         }
         root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val dpiTitle = TextView(this).apply {
+            text = "\\nDPI / DENSIDADE PARA JOGOS"
+            textSize = 18f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        root.addView(dpiTitle)
+
+        val dpiNote = TextView(this).apply {
+            text = "Perfil recomendado: 90% da densidade atual (interface menor). DPI não aumenta FPS diretamente; use apenas se a interface continuar confortável. O valor é editável."
+            textSize = 13f
+            setTextColor(0xFFB8C4D9.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        root.addView(dpiNote)
+
+        dpiInput = EditText(this).apply {
+            hint = "DPI desejada (ex.: 360)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            textSize = 16f
+            setSingleLine(true)
+        }
+        root.addView(dpiInput, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val dpiRecommendedButton = Button(this).apply {
+            text = "USAR DPI RECOMENDADA"
+            setOnClickListener { applyRecommendedDpi() }
+        }
+        root.addView(dpiRecommendedButton, LinearLayout.LayoutParams(-1, dp(50)))
+
+        dpiApplyButton = Button(this).apply {
+            text = "APLICAR DPI PERSONALIZADA"
+            setOnClickListener { applyCustomDpi() }
+        }
+        root.addView(dpiApplyButton, LinearLayout.LayoutParams(-1, dp(50)))
+
+        dpiRestoreButton = Button(this).apply {
+            text = "RESTAURAR DPI ORIGINAL"
+            setOnClickListener { restoreDpi() }
+        }
+        root.addView(dpiRestoreButton, LinearLayout.LayoutParams(-1, dp(50)))
 
         val gamePerformanceButton = Button(this).apply {
             text = "MODO DE JOGO: PERFORMANCE"
@@ -406,6 +454,109 @@ class MainActivity : Activity() {
                 runOnUiThread { status.text = "Taxa máxima não aplicada: " + (e.message ?: "recurso bloqueado pelo sistema") }
             } finally {
                 runOnUiThread { refreshRateButton.isEnabled = true }
+            }
+        }
+    }
+
+    private fun readDpiState(): Pair<Int?, Boolean> {
+        val output = runShell("wm density").second
+        val override = Regex("Override density:\\s*(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
+        val physical = Regex("Physical density:\\s*(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
+        return Pair(override ?: physical, override != null)
+    }
+
+    private fun applyRecommendedDpi() {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        executor.execute {
+            try {
+                val (current, _) = readDpiState()
+                if (current == null) throw IllegalStateException("Não consegui ler a densidade atual")
+                val recommended = (current * 0.90f).toInt().coerceIn(120, 1000)
+                runOnUiThread { dpiInput.setText(recommended.toString()) }
+                applyDpi(recommended)
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Não foi possível calcular a DPI: ${e.message}" }
+            }
+        }
+    }
+
+    private fun applyCustomDpi() {
+        val value = dpiInput.text.toString().trim().toIntOrNull()
+        if (value == null || value !in 120..1000) {
+            Toast.makeText(this, "Digite uma DPI entre 120 e 1000.", Toast.LENGTH_LONG).show()
+            return
+        }
+        applyDpi(value)
+    }
+
+    private fun applyDpi(value: Int) {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        dpiApplyButton.isEnabled = false
+        dpiRestoreButton.isEnabled = false
+        executor.execute {
+            try {
+                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                if (!prefs.getBoolean("dpi_saved", false)) {
+                    val state = readDpiState()
+                    prefs.edit()
+                        .putInt("dpi_original_value", state.first ?: -1)
+                        .putBoolean("dpi_original_override", state.second)
+                        .putBoolean("dpi_saved", true)
+                        .apply()
+                }
+                val result = runShell("wm density $value")
+                if (result.first != 0) throw IllegalStateException(result.second.ifBlank { "Android recusou a alteração" })
+                runOnUiThread {
+                    status.text = "DPI definida para $value. A interface pode mudar de tamanho; isso não garante aumento de FPS."
+                    Toast.makeText(this, "DPI $value aplicada", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Falha ao aplicar DPI: ${e.message}" }
+            } finally {
+                runOnUiThread {
+                    dpiApplyButton.isEnabled = true
+                    dpiRestoreButton.isEnabled = true
+                }
+            }
+        }
+    }
+
+    private fun restoreDpi() {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        dpiRestoreButton.isEnabled = false
+        executor.execute {
+            try {
+                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                if (!prefs.getBoolean("dpi_saved", false)) {
+                    runOnUiThread { status.text = "Nenhuma DPI original foi salva. Nada foi alterado." }
+                    return@execute
+                }
+                val hadOverride = prefs.getBoolean("dpi_original_override", false)
+                val original = prefs.getInt("dpi_original_value", -1)
+                val command = if (hadOverride && original > 0) "wm density $original" else "wm density reset"
+                val result = runShell(command)
+                if (result.first != 0) throw IllegalStateException(result.second.ifBlank { "Android recusou a restauração" })
+                prefs.edit().putBoolean("dpi_saved", false).apply()
+                runOnUiThread {
+                    status.text = "DPI original restaurada."
+                    Toast.makeText(this, "DPI original restaurada", Toast.LENGTH_LONG).show()
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Falha ao restaurar DPI: ${e.message}" }
+            } finally {
+                runOnUiThread { dpiRestoreButton.isEnabled = true }
             }
         }
     }
