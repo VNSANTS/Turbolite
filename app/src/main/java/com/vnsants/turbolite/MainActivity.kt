@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
+import android.net.TrafficStats
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Typeface
@@ -45,7 +46,33 @@ class MainActivity : Activity() {
     private var keepPackages: List<String> = emptyList()
     private lateinit var autoThermalCheck: CheckBox
     private val thermalHandler = Handler(Looper.getMainLooper())
-    private var thermalCheckBusy = false
+    private val monitorHandler = Handler(Looper.getMainLooper())
+    private var selectedTabKey = "home"
+    private var previousRxBytes = -1L
+    private var previousTxBytes = -1L
+    private var previousNetworkAtMs = 0L
+    private lateinit var performanceCard: TextView
+    private lateinit var monitorGauge: TextView
+    private lateinit var monitorMetrics: TextView
+    private val monitorUpdater = object : Runnable {
+        override fun run() {
+            if (selectedTabKey != "monitor" || isFinishing) return
+            updateMonitorDashboard()
+            monitorHandler.postDelayed(this, 5_000L)
+        }
+    }
+    @Volatile private var thermalCheckBusy = false
+    @Volatile private var permissionRequestInFlight = false
+    private val binderReceivedListener = Shizuku.OnBinderReceivedListener {
+        if (::status.isInitialized) updatePermissionState()
+    }
+    private val binderDeadListener = Shizuku.OnBinderDeadListener {
+        if (::status.isInitialized) {
+            permissionRequestInFlight = false
+            status.text = "Conexão do Shizuku perdida. Reinicie o serviço e tente novamente."
+            if (::actionButton.isInitialized) actionButton.isEnabled = false
+        }
+    }
     private val thermalMonitor = object : Runnable {
         override fun run() {
             if (!::autoThermalCheck.isInitialized || !autoThermalCheck.isChecked || isFinishing) return
@@ -79,7 +106,9 @@ class MainActivity : Activity() {
                             }.filter { it in 25f..120f }.toList()
                         val thermalValues = serviceValues + zoneValues
                         val hot = (batteryC != null && batteryC >= 42f) || thermalValues.any { it >= 45f }
-                        val cool = (batteryC != null && batteryC <= 39f) && thermalValues.none { it >= 42f }
+                        val hasThermalReading = batteryC != null || thermalValues.isNotEmpty()
+                        val cool = hasThermalReading &&
+                            (batteryC == null || batteryC <= 39f) && thermalValues.none { it >= 42f }
                         runOnUiThread {
                             if (!::autoThermalCheck.isInitialized || !autoThermalCheck.isChecked) return@runOnUiThread
                             val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
@@ -88,7 +117,6 @@ class MainActivity : Activity() {
                                 status.text = "Temperatura elevada detectada. Ativando perfil térmico automático…"
                                 applyUsageProfile("auto_cooling")
                             } else if (cool && prefs.getBoolean("auto_thermal_cooling_active", false)) {
-                                prefs.edit().putBoolean("auto_thermal_cooling_active", false).apply()
                                 status.text = "Temperatura voltou a um nível menor. Restaurando configurações anteriores…"
                                 restoreUsageProfile()
                             } else if (batteryC != null) {
@@ -97,6 +125,10 @@ class MainActivity : Activity() {
                                 status.text = "Monitor térmico ativo • sensor: ${String.format(java.util.Locale.US, "%.1f", thermalValues.maxOrNull() ?: 0f)} °C"
                             } else {
                                 status.text = "Temperatura indisponível: a XOS não expôs sensores ao Shizuku. O monitor automático não consegue detectar aquecimento neste momento."
+                                if (prefs.getBoolean("auto_thermal_cooling_active", false)) {
+                                    // Não mantém um perfil térmico aplicado quando já não há leitura confiável.
+                                    restoreUsageProfile()
+                                }
                             }
                         }
                     } catch (_: Exception) {
@@ -109,8 +141,10 @@ class MainActivity : Activity() {
         }
     }
 
-    private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
+    private val permissionListener = Shizuku.OnRequestPermissionResultListener { requestCode, grantResult ->
         runOnUiThread {
+            if (requestCode != 1001) return@runOnUiThread
+            permissionRequestInFlight = false
             if (grantResult == PackageManager.PERMISSION_GRANTED) {
                 status.text = "Shizuku autorizado. Pronto para otimizar."
                 actionButton.isEnabled = true
@@ -124,6 +158,8 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Shizuku.addRequestPermissionResultListener(permissionListener)
+        Shizuku.addBinderReceivedListener(binderReceivedListener)
+        Shizuku.addBinderDeadListener(binderDeadListener)
         buildUi()
         val overlayPrefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
         if (!overlayPrefs.contains("show_fps")) {
@@ -143,7 +179,7 @@ class MainActivity : Activity() {
         "efficiency" to "Perfil integrado: economia moderada",
         "cooling" to "Perfil integrado: resfriamento",
         "hard" to "Perfil integrado: HARD / economia extrema",
-        "clean_ram" to "Fechar apps + limpar processos em cache",
+        "clean_ram" to "Fechar apps selecionáveis (sem limpeza de RAM)",
         "thermal" to "Ativar monitor térmico automático",
         "overlay" to "Mostrar painel flutuante"
     )
@@ -158,7 +194,7 @@ class MainActivity : Activity() {
             text = "PERFIS PERSONALIZADOS"
             textSize = 12f
             letterSpacing = 0.12f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(20), 0, dp(8))
         }
@@ -325,6 +361,24 @@ class MainActivity : Activity() {
     private var previousCpuTotal = 0L
     private var previousCpuIdle = 0L
 
+    private fun updateMonitorDashboard() {
+        if (::performanceCard.isInitialized) updatePerformanceCard(performanceCard)
+        if (::monitorMetrics.isInitialized) {
+            monitorMetrics.text = performanceCard.text.toString()
+                .replace("STATUS DE DESEMPENHO", "INDICADORES DO SISTEMA") +
+                "\nFPS: estimativa disponível no painel flutuante com Shizuku"
+        }
+        if (::monitorGauge.isInitialized) {
+            val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val raw = battery?.getIntExtra("temperature", -1) ?: -1
+            monitorGauge.text = if (raw > 0) {
+                String.format(java.util.Locale.US, "🌡  TEMPERATURA\n%.1f°C\n\nTemperatura da bateria", raw / 10f)
+            } else {
+                "🌡  TEMPERATURA\nSensor de bateria indisponível"
+            }
+        }
+    }
+
     private fun updatePerformanceCard(card: TextView) {
         try {
             val manager = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
@@ -339,6 +393,32 @@ class MainActivity : Activity() {
             val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
             val tempTenths = batteryIntent?.getIntExtra("temperature", -1) ?: -1
             val temp = if (tempTenths >= 0) String.format(java.util.Locale.US, "%.1f°C", tempTenths / 10f) else "indisponível"
+            val rx = TrafficStats.getTotalRxBytes()
+            val tx = TrafficStats.getTotalTxBytes()
+            val now = android.os.SystemClock.elapsedRealtime()
+            val network = if (rx >= 0L && tx >= 0L && previousRxBytes >= 0L && previousTxBytes >= 0L && now > previousNetworkAtMs) {
+                val seconds = (now - previousNetworkAtMs) / 1000.0
+                "↓ ${formatNetworkRate(((rx - previousRxBytes).coerceAtLeast(0L) / seconds).toLong())}  ↑ ${formatNetworkRate(((tx - previousTxBytes).coerceAtLeast(0L) / seconds).toLong())}"
+            } else "medindo…"
+            if (rx >= 0L && tx >= 0L) {
+                previousRxBytes = rx
+                previousTxBytes = tx
+                previousNetworkAtMs = now
+            }
+            var thermalStatus = "indisponível"
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                val power = getSystemService(POWER_SERVICE) as android.os.PowerManager
+                thermalStatus = when (power.currentThermalStatus) {
+                    android.os.PowerManager.THERMAL_STATUS_NONE -> "normal"
+                    android.os.PowerManager.THERMAL_STATUS_LIGHT -> "leve"
+                    android.os.PowerManager.THERMAL_STATUS_MODERATE -> "moderado"
+                    android.os.PowerManager.THERMAL_STATUS_SEVERE -> "alto"
+                    android.os.PowerManager.THERMAL_STATUS_CRITICAL -> "crítico"
+                    android.os.PowerManager.THERMAL_STATUS_EMERGENCY -> "emergência"
+                    android.os.PowerManager.THERMAL_STATUS_SHUTDOWN -> "desligamento iminente"
+                    else -> "indisponível"
+                }
+            }
             var cpuText = "indisponível"
             try {
                 val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
@@ -357,13 +437,16 @@ class MainActivity : Activity() {
             card.text = "STATUS DE DESEMPENHO\n" +
                 "CPU: $cpuText     RAM: $usedMb / $totalMb MB\n" +
                 "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\n" +
-                "Temperatura da bateria: $temp"
+                "Temperatura da bateria: $temp • térmico: $thermalStatus\n" +
+                "Rede aparelho: $network"
         } catch (e: Exception) {
             card.text = "STATUS DE DESEMPENHO\\nNão foi possível ler todas as métricas neste Android."
         }
     }
 
     private fun buildUi() {
+        monitorHandler.removeCallbacks(monitorUpdater)
+        thermalHandler.removeCallbacks(thermalMonitor)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(22), dp(18), dp(24))
@@ -376,10 +459,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(18), dp(16), dp(18))
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(0xFF102744.toInt(), 0xFF07111F.toInt())).apply {
-                cornerRadius = dp(22).toFloat()
-                setStroke(dp(1), 0xFF075B80.toInt())
+                intArrayOf(withAlpha(accentColor(), 0x34), 0xFF07111F.toInt())).apply {
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), withAlpha(accentColor(), 0x88))
             }
+            elevation = dp(3).toFloat()
         }
         val brandMark = android.widget.ImageView(this).apply {
             setImageResource(com.vnsants.turbolite.R.drawable.ic_turbolite)
@@ -394,7 +478,7 @@ class MainActivity : Activity() {
             text = "TurboLite"
             textSize = 29f
             setTextColor(0xFFF2F8FF.toInt())
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD_ITALIC)
+            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
             letterSpacing = -0.025f
         }
         brandCopy.addView(title)
@@ -402,12 +486,12 @@ class MainActivity : Activity() {
             text = "MAIS CONTROLE. MAIS DESEMPENHO."
             textSize = 10f
             letterSpacing = 0.07f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             setPadding(0, dp(4), 0, dp(5))
         }
         brandCopy.addView(subtitle)
         val version = TextView(this).apply {
-            text = "BETA • ANDROID 14 • SEM ROOT"
+            text = "ANDROID 14  •  SHIZUKU  •  SEM ROOT"
             textSize = 10f
             setTextColor(0xFF9CAAC4.toInt())
         }
@@ -419,7 +503,7 @@ class MainActivity : Activity() {
             text = "CONTROLE RÁPIDO"
             textSize = 12f
             letterSpacing = 0.12f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(16), 0, dp(8))
         }
@@ -448,10 +532,12 @@ class MainActivity : Activity() {
             setColor(0xFF121D30.toInt())
             setStroke(dp(1), 0xFF263B57.toInt())
         }
-        status.setPadding(dp(14), dp(12), dp(14), dp(12))
+        status.setPadding(dp(16), dp(14), dp(16), dp(14))
+        status.minimumHeight = dp(52)
+        status.elevation = dp(1).toFloat()
         root.addView(status)
 
-        val performanceCard = TextView(this).apply {
+        performanceCard = TextView(this).apply {
             text = "STATUS DO SISTEMA\nLendo dados do aparelho…"
             textSize = 14f
             setTextColor(0xFFE2E8F0.toInt()
@@ -462,10 +548,12 @@ class MainActivity : Activity() {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(18).toFloat()
                 setColor(0xFF101B2D.toInt())
-                setStroke(dp(1), 0xFF00AFCB.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x70))
             }
+            elevation = dp(2).toFloat()
+            setLineSpacing(dp(3).toFloat(), 1f)
         }
-        root.addView(performanceCard, LinearLayout.LayoutParams(-1, dp(132)).apply {
+        root.addView(performanceCard, LinearLayout.LayoutParams(-1, dp(160)).apply {
             topMargin = dp(12)
             bottomMargin = dp(8)
         })
@@ -507,7 +595,7 @@ class MainActivity : Activity() {
             text = "JOGOS E INTERFACE"
             textSize = 12f
             letterSpacing = 0.12f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(18), 0, dp(8))
         }
@@ -573,7 +661,7 @@ class MainActivity : Activity() {
             text = "BATERIA, TEMPERATURA E MEMÓRIA"
             textSize = 12f
             letterSpacing = 0.12f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(20), 0, dp(8))
         }
@@ -633,9 +721,13 @@ class MainActivity : Activity() {
                     status.text = "Monitor térmico ativado. A XOS pode ocultar a temperatura real."
                     thermalHandler.post(thermalMonitor)
                 } else {
-                    getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit()
-                        .putBoolean("auto_thermal_cooling_active", false).apply()
-                    status.text = "Monitor térmico automático desativado."
+                    val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                    if (prefs.getBoolean("auto_thermal_cooling_active", false)) {
+                        status.text = "Monitor desativado. Restaurando o perfil térmico aplicado…"
+                        restoreUsageProfile()
+                    } else {
+                        status.text = "Monitor térmico automático desativado."
+                    }
                 }
             }
         }
@@ -649,7 +741,7 @@ class MainActivity : Activity() {
         root.addView(thermalHint)
 
         val cleanRamButton = Button(this).apply {
-            text = "COMBO: FECHAR APPS + LIMPAR RAM"
+            text = "COMBO: FECHAR APPS SELECIONÁVEIS"
             setOnClickListener { cleanRamAndBackgroundApps() }
         }
         root.addView(cleanRamButton, LinearLayout.LayoutParams(-1, dp(52)))
@@ -668,7 +760,7 @@ class MainActivity : Activity() {
             text = "PAINEL E MONITORAMENTO"
             textSize = 12f
             letterSpacing = 0.12f
-            setTextColor(0xFF00D4FF.toInt())
+            setTextColor(accentColor())
             typeface = Typeface.DEFAULT_BOLD
             setPadding(0, dp(20), 0, dp(8))
         }
@@ -709,6 +801,7 @@ class MainActivity : Activity() {
         }
         addMetricToggle("Mostrar RAM", "show_ram", true)
         addMetricToggle("Mostrar ping (teste para 1.1.1.1)", "show_ping", false)
+        addMetricToggle("Mostrar tráfego de rede do aparelho", "show_network", true)
         addMetricToggle("Mostrar FPS (estimativa; depende do Android)", "show_fps", true)
         addMetricToggle("Mostrar uso de CPU (Shizuku)", "show_cpu", false)
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
@@ -729,22 +822,23 @@ class MainActivity : Activity() {
         }
         root.addView(monitorSubtitle)
 
-        val monitorGauge = TextView(this).apply {
+        monitorGauge = TextView(this).apply {
             text = "🌡  TEMPERATURA\nLendo sensores…"
             textSize = 21f
             gravity = Gravity.CENTER
             setTextColor(0xFFEAF7FF.toInt())
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(16), dp(20), dp(16), dp(20))
-            background = GradientDrawable().apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(withAlpha(accentColor(), 0x28), 0xFF0B192B.toInt())).apply {
                 cornerRadius = dp(24).toFloat()
-                setColor(0xFF0B192B.toInt())
-                setStroke(dp(2), 0xFF00BFEA.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x80))
             }
+            elevation = dp(2).toFloat()
         }
         root.addView(monitorGauge, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(12) })
 
-        val monitorMetrics = TextView(this).apply {
+        monitorMetrics = TextView(this).apply {
             text = "◉ CPU   —\n▦ RAM   —\n▣ BATERIA   —\n◷ FPS   Não disponível pelo Android comum"
             textSize = 15f
             setTextColor(0xFFE2EAF5.toInt())
@@ -752,20 +846,17 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(18).toFloat()
                 setColor(0xFF0E1B2D.toInt())
-                setStroke(dp(1), 0xFF193A56.toInt())
+                setStroke(dp(1), 0xFF263B55.toInt())
             }
+            elevation = dp(1).toFloat()
+            setLineSpacing(dp(3).toFloat(), 1f)
         }
         root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
 
         val monitorRefresh = Button(this).apply {
             text = "ATUALIZAR MONITORAMENTO"
             setOnClickListener {
-                updatePerformanceCard(performanceCard)
-                monitorMetrics.text = performanceCard.text.toString().replace("STATUS DO SISTEMA", "INDICADORES DO SISTEMA")
-                val intent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                val raw = intent?.getIntExtra("temperature", -1) ?: -1
-                monitorGauge.text = if (raw > 0) String.format(java.util.Locale.getDefault(), "🌡  TEMPERATURA\n%.1f°C\n\nTemperatura da bateria", raw / 10f)
-                    else "🌡  TEMPERATURA\nSensor de bateria indisponível"
+                updateMonitorDashboard()
             }
         }
         root.addView(monitorRefresh, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(16) })
@@ -806,6 +897,30 @@ class MainActivity : Activity() {
             }
         }
         root.addView(reloadButton, LinearLayout.LayoutParams(-1, dp(52)))
+
+        val accentButton = Button(this).apply {
+            val names = listOf("Ciano", "Violeta", "Verde")
+            val selected = getSharedPreferences("turbolite_settings", MODE_PRIVATE).getString("accent_theme", "cyan")
+            text = "COR DE DESTAQUE: " + when (selected) { "violet" -> names[1]; "green" -> names[2]; else -> names[0] }
+            setOnClickListener {
+                val keys = arrayOf("cyan", "violet", "green")
+                val labels = arrayOf("Ciano", "Violeta", "Verde")
+                val current = getSharedPreferences("turbolite_settings", MODE_PRIVATE).getString("accent_theme", "cyan")
+                val index = keys.indexOf(current).coerceAtLeast(0)
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Personalizar cor de destaque")
+                    .setSingleChoiceItems(labels, index) { dialog, which ->
+                        getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit().putString("accent_theme", keys[which]).apply()
+                        dialog.dismiss()
+                        buildUi()
+                        loadAppsToKeep()
+                        updatePermissionState()
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        }
+        root.addView(accentButton, LinearLayout.LayoutParams(-1, dp(50)))
 
         val note = TextView(this).apply {
             text = "\nO que esta beta faz:\n" +
@@ -859,32 +974,45 @@ class MainActivity : Activity() {
             setPadding(dp(6), dp(7), dp(6), dp(7))
             background = GradientDrawable().apply {
                 setColor(0xFF0B1423.toInt())
-                setStroke(dp(1), 0xFF18334D.toInt())
+                setStroke(dp(1), 0xFF24364F.toInt())
             }
+            elevation = dp(5).toFloat()
         }
         val navItems = listOf(
             Triple("⌂", "Início", "home"),
-            Triple("⚙", "Perfis", "profiles"),
-            Triple("◉", "Monitor", "monitor"),
-            Triple("☷", "Config.", "settings"),
-            Triple("✦", "Jogos", "games")
+            Triple("◉", "Perfis", "profiles"),
+            Triple("◷", "Monitor", "monitor"),
+            Triple("✦", "Jogos", "games"),
+            Triple("☷", "Mais", "settings")
         )
         val navButtons = mutableMapOf<String, TextView>()
         fun selectTab(tab: String) {
+            selectedTabKey = tab
+            getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit().putString("selected_tab", tab).apply()
             for (index in 0 until root.childCount) {
                 val child = root.getChildAt(index)
                 child.visibility = if (child.tag == tab) android.view.View.VISIBLE else android.view.View.GONE
             }
             navButtons.forEach { (key, button) ->
                 val selected = key == tab
-                button.setTextColor(if (selected) 0xFF00D4FF.toInt() else 0xFF8EA3BB.toInt())
-                button.background = GradientDrawable().apply {
-                    cornerRadius = dp(13).toFloat()
-                    setColor(if (selected) 0xFF102A40.toInt() else 0x00000000)
-                    if (selected) setStroke(dp(1), 0xFF087A9D.toInt())
-                }
+                button.setTextColor(if (selected) accentColor() else 0xFF8EA3BB.toInt())
+                button.isSelected = selected
+                button.background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x48)),
+                    GradientDrawable().apply {
+                        cornerRadius = dp(15).toFloat()
+                        setColor(if (selected) withAlpha(accentColor(), 0x24) else 0x00000000)
+                        if (selected) setStroke(dp(1), withAlpha(accentColor(), 0xA0))
+                    },
+                    null
+                )
             }
             scroll.scrollTo(0, 0)
+            monitorHandler.removeCallbacks(monitorUpdater)
+            if (tab == "monitor") {
+                updateMonitorDashboard()
+                monitorHandler.postDelayed(monitorUpdater, 5_000L)
+            }
         }
         for ((symbol, label, tab) in navItems) {
             val button = TextView(this).apply {
@@ -894,10 +1022,18 @@ class MainActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(0xFF8EA3BB.toInt())
                 setPadding(dp(3), dp(7), dp(3), dp(7))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(13).toFloat()
-                    setColor(0x00000000)
-                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = label
+                minHeight = dp(52)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x48)),
+                    GradientDrawable().apply {
+                        cornerRadius = dp(15).toFloat()
+                        setColor(0x00000000)
+                    },
+                    null
+                )
                 setOnClickListener { selectTab(tab) }
             }
             navButtons[tab] = button
@@ -909,7 +1045,7 @@ class MainActivity : Activity() {
         page.addView(nav, LinearLayout.LayoutParams(-1, -2))
         setContentView(page)
         styleControls(root)
-        selectTab("home")
+        selectTab(getSharedPreferences("turbolite_settings", MODE_PRIVATE).getString("selected_tab", "home") ?: "home")
         if (getSharedPreferences("turbolite_settings", MODE_PRIVATE).getBoolean("auto_thermal_monitor_enabled", false)) {
             thermalHandler.post(thermalMonitor)
         }
@@ -923,15 +1059,22 @@ class MainActivity : Activity() {
                 label.contains("ATIVAR MODO HARD") ||
                 label.contains("SALVAR / ATUALIZAR PERFIL")
             val caution = label.contains("HARD") || label.contains("EXCLUIR")
-            view.background = GradientDrawable(
+            val shape = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                if (primary) intArrayOf(0xFF007EA8.toInt(), 0xFF00B8D9.toInt())
-                else intArrayOf(0xFF13253B.toInt(), 0xFF0E1A2C.toInt())
+                if (primary) intArrayOf(lighten(accentColor(), 0.12f), accentColor())
+                else intArrayOf(0xFF17263A.toInt(), 0xFF101A2A.toInt())
             ).apply {
-                cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), if (primary) 0xFF00D4FF.toInt() else 0xFF263F5C.toInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), if (primary) withAlpha(accentColor(), 0xD0) else 0xFF2A3D57.toInt())
             }
-            view.setTextColor(if (primary) 0xFF03111D.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAFBFF.toInt())
+            view.background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(if (primary) 0x44FFFFFF else withAlpha(accentColor(), 0x35)),
+                shape,
+                shape.constantState?.newDrawable()?.mutate()
+            )
+            view.elevation = if (primary) dp(2).toFloat() else 0f
+            view.minimumHeight = maxOf(view.minimumHeight, dp(48))
+            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAF0F8.toInt())
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
             view.isAllCaps = false
@@ -943,14 +1086,18 @@ class MainActivity : Activity() {
             }
         } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
                 "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "BATERIA, TEMPERATURA E MEMÓRIA",
-                "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO"
+                "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO", "MONITORAMENTO",
+                "CONFIGURAÇÕES", "JOGOS E INTERFACE"
             )) {
             view.background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(0xFF0D1B2D.toInt())
-                setStroke(dp(1), 0xFF153A55.toInt())
+                cornerRadius = dp(12).toFloat()
+                setColor(0xFF101A2A.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x35))
             }
             view.setPadding(dp(12), dp(12), dp(12), dp(12))
+            view.textSize = 12f
+            view.letterSpacing = 0.08f
+            view.typeface = Typeface.create("sans-serif", Typeface.BOLD)
             val params = view.layoutParams
             if (params is LinearLayout.LayoutParams) {
                 params.topMargin = dp(14)
@@ -959,14 +1106,16 @@ class MainActivity : Activity() {
             }
         } else if (view is CheckBox) {
             view.setTextColor(0xFFE2E8F0.toInt())
-            view.buttonTintList = android.content.res.ColorStateList.valueOf(0xFF00D4FF.toInt())
-            view.setPadding(dp(8), dp(7), dp(8), dp(7))
+            view.buttonTintList = android.content.res.ColorStateList.valueOf(accentColor())
+            view.minHeight = dp(48)
+            view.setPadding(dp(10), dp(8), dp(10), dp(8))
         } else if (view is Spinner) {
             view.setBackground(GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setColor(0xFF121D30.toInt())
-                setStroke(dp(1), 0xFF263B57.toInt())
+                setStroke(dp(1), 0xFF30415A.toInt())
             })
+            view.minimumHeight = maxOf(view.minimumHeight, dp(48))
         } else if (view is EditText) {
             view.setTextColor(0xFFFFFFFF.toInt())
             view.setHintTextColor(0xFF8292AD.toInt())
@@ -995,29 +1144,57 @@ class MainActivity : Activity() {
     }
 
     private fun loadAppsToKeep() {
-        try {
-            userApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { app ->
-                    (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
-                        packageManager.getLaunchIntentForPackage(app.packageName) != null
+        status.text = "Carregando lista de apps…"
+        reloadButton.isEnabled = false
+        executor.execute {
+            try {
+                val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+                    .asSequence()
+                    .filter { app ->
+                        (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+                            packageManager.getLaunchIntentForPackage(app.packageName) != null
+                    }
+                    .map { app ->
+                        app to packageManager.getApplicationLabel(app).toString()
+                    }
+                    .sortedBy { (_, label) -> label.lowercase(java.util.Locale.ROOT) }
+                    .toList()
+
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    userApps = apps.map { it.first }
+                    val labels = mutableListOf("TurboLite (manter aberto)")
+                    val packages = mutableListOf(packageName)
+                    apps.filter { it.first.packageName != packageName }.forEach { (app, label) ->
+                        labels.add("$label • ${app.packageName}")
+                        packages.add(app.packageName)
+                    }
+                    keepPackages = packages
+
+                    val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
+                        setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    }
+                    keepSpinner.adapter = adapter
+                    val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                    val savedPackage = prefs.getString("keep_package", packageName)
+                    val savedIndex = keepPackages.indexOf(savedPackage).takeIf { it >= 0 } ?: 0
+                    keepSpinner.setSelection(savedIndex)
+                    keepSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                            keepPackages.getOrNull(position)?.let { prefs.edit().putString("keep_package", it).apply() }
+                        }
+                    }
+                    status.text = "Lista carregada: ${labels.size - 1} apps disponíveis para manter."
                 }
-                .sortedBy { packageManager.getApplicationLabel(it).toString().lowercase() }
-
-            val labels = mutableListOf("TurboLite (manter aberto)")
-            val packages = mutableListOf(packageName)
-            userApps.filter { it.packageName != packageName }.forEach { app ->
-                labels.add("${packageManager.getApplicationLabel(app)} • ${app.packageName}")
-                packages.add(app.packageName)
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    status.text = "Não consegui listar os apps: ${e.message ?: "erro desconhecido"}"
+                }
+            } finally {
+                runOnUiThread { if (!isFinishing && !isDestroyed) reloadButton.isEnabled = true }
             }
-            keepPackages = packages
-
-            val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            keepSpinner.adapter = adapter
-            status.text = "Lista carregada: ${labels.size - 1} apps disponíveis para manter."
-        } catch (e: Exception) {
-            status.text = "Não consegui listar os apps: ${e.message ?: "erro desconhecido"}"
         }
     }
 
@@ -1033,13 +1210,17 @@ class MainActivity : Activity() {
                 } else {
                     status.text = "Shizuku conectado, falta autorizar."
                     actionButton.isEnabled = false
-                    Shizuku.requestPermission(1001)
+                    if (!permissionRequestInFlight) {
+                        permissionRequestInFlight = true
+                        Shizuku.requestPermission(1001)
+                    }
                 }
             } else {
                 status.text = "Abra o Shizuku, inicie o serviço (depuração sem fio) e volte aqui."
                 actionButton.isEnabled = false
             }
         } catch (e: Exception) {
+            permissionRequestInFlight = false
             status.text = "Shizuku indisponível: ${e.message ?: "verifique a configuração"}"
             actionButton.isEnabled = false
         }
@@ -1055,12 +1236,8 @@ class MainActivity : Activity() {
         }
     }
 
-    private fun runShell(command: String): Pair<Int, String> {
-        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
-        val output = process.inputStream.bufferedReader().use { it.readText() }.trim()
-        val exitCode = process.waitFor()
-        return Pair(exitCode, output)
-    }
+    private fun runShell(command: String): Pair<Int, String> =
+        ShizukuCommandClient.run(this, command, 10_000L)
 
     private fun setAnimationMode(enable: Boolean) {
         if (!hasShizukuPermission()) {
@@ -1138,46 +1315,53 @@ class MainActivity : Activity() {
                 val savedKey = "refresh_rates_saved"
                 if (enable) {
                     if (!prefs.getBoolean(savedKey, false)) {
-                        val peak = runShell("settings get system peak_refresh_rate").second
-                        val min = runShell("settings get system min_refresh_rate").second
+                        val peakResult = runShell("settings get system peak_refresh_rate")
+                        val minResult = runShell("settings get system min_refresh_rate")
+                        if (peakResult.first != 0 || minResult.first != 0) {
+                            throw IllegalStateException("Não foi possível ler as preferências atuais da tela")
+                        }
                         prefs.edit()
-                            .putString("peak_refresh_rate", peak.ifBlank { "null" })
-                            .putString("min_refresh_rate", min.ifBlank { "null" })
+                            .putString("peak_refresh_rate", peakResult.second.ifBlank { "null" })
+                            .putString("min_refresh_rate", minResult.second.ifBlank { "null" })
                             .putBoolean(savedKey, true).apply()
                     }
                     val dump = runShell("dumpsys display")
+                    if (dump.first != 0) throw IllegalStateException("O Android não permitiu consultar os modos de tela")
                     val rates = Regex("refreshRate=([0-9]+(?:\\.[0-9]+)?)")
                         .findAll(dump.second).mapNotNull { it.groupValues[1].toFloatOrNull() }
                         .filter { it in 30f..240f }.toList()
                     val maxRate = rates.maxOrNull()
                         ?: throw IllegalStateException("O Android não informou os modos de tela")
                     val value = String.format(java.util.Locale.US, "%.2f", maxRate)
-                    val peakResult = runShell("settings put system peak_refresh_rate " + value)
-                    val minResult = runShell("settings put system min_refresh_rate " + value)
+                    val peakResult = runShell("settings put system peak_refresh_rate $value")
+                    val minResult = runShell("settings put system min_refresh_rate $value")
                     if (peakResult.first != 0 || minResult.first != 0) {
-                        throw IllegalStateException("O fabricante bloqueou a alteração")
+                        throw IllegalStateException("O fabricante recusou a preferência; restaure para voltar ao estado salvo")
                     }
                     runOnUiThread {
-                        status.text = "Solicitado modo " + value + " Hz. O XOS pode ignorar a preferência; confirme nas configurações da tela."
-                        Toast.makeText(this, "Preferência de " + value + " Hz aplicada (se aceita pelo sistema)", Toast.LENGTH_LONG).show()
+                        status.text = "Solicitado modo $value Hz. A XOS pode ignorar a preferência; confirme nas configurações da tela."
+                        Toast.makeText(this, "Preferência de $value Hz solicitada", Toast.LENGTH_LONG).show()
                     }
                 } else if (prefs.getBoolean(savedKey, false)) {
-                    for (key in listOf("peak_refresh_rate", "min_refresh_rate")) {
-                        val old = prefs.getString(key, "null") ?: "null"
-                        if (old == "null") {
-                            runShell("settings delete system " + key)
-                        } else {
-                            val safe = old.replace(Regex("[^0-9.]"), "")
-                            if (safe.isNotBlank()) runShell("settings put system " + key + " " + safe)
+                    val failures = mutableListOf<String>()
+                    for ((prefKey, setting) in listOf("peak_refresh_rate" to "peak_refresh_rate", "min_refresh_rate" to "min_refresh_rate")) {
+                        val old = prefs.getString(prefKey, "null") ?: "null"
+                        val result = if (old == "null") runShell("settings delete system $setting")
+                        else if (old.matches(Regex("[0-9]+(\\.[0-9]+)?"))) runShell("settings put system $setting $old")
+                        else {
+                            failures.add(setting)
+                            continue
                         }
+                        if (result.first != 0) failures.add(setting)
                     }
+                    if (failures.isNotEmpty()) throw IllegalStateException("Falha ao restaurar ${failures.joinToString()}; os valores originais continuam salvos")
                     prefs.edit().putBoolean(savedKey, false).apply()
                     runOnUiThread { status.text = "Preferências de taxa de atualização restauradas." }
                 } else {
                     runOnUiThread { status.text = "Nenhuma preferência de Hz salva para restaurar." }
                 }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "Taxa máxima não aplicada: " + (e.message ?: "recurso bloqueado pelo sistema") }
+                runOnUiThread { status.text = "Taxa de atualização não concluída: ${e.message ?: "recurso bloqueado pelo sistema"}" }
             } finally {
                 runOnUiThread { refreshRateButton.isEnabled = true }
             }
@@ -1355,13 +1539,8 @@ class MainActivity : Activity() {
             val failures = mutableListOf<String>()
             for (app in candidates) {
                 try {
-                    val p = Shizuku.newProcess(
-                        arrayOf("sh", "-c", "am force-stop '${app.packageName.replace("'", "")}'"),
-                        null,
-                        null
-                    )
-                    val exitCode = p.waitFor()
-                    if (exitCode == 0) stopped++ else failures.add(app.packageName)
+                    val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
+                    if (result.first == 0) stopped++ else failures.add(app.packageName)
                 } catch (e: Exception) {
                     failures.add(app.packageName)
                 }
@@ -1408,13 +1587,16 @@ class MainActivity : Activity() {
                     }
                 }
                 if (!prefs.getBoolean("usage_profile_saved", false)) {
-                    val lowPower = runShell("settings get global low_power").second
-                    val peak = runShell("settings get system peak_refresh_rate").second
-                    val min = runShell("settings get system min_refresh_rate").second
+                    val lowPowerResult = runShell("settings get global low_power")
+                    val peakResult = runShell("settings get system peak_refresh_rate")
+                    val minResult = runShell("settings get system min_refresh_rate")
+                    if (lowPowerResult.first != 0 || peakResult.first != 0 || minResult.first != 0) {
+                        throw IllegalStateException("Não foi possível salvar as preferências originais; nenhuma alteração foi aplicada")
+                    }
                     prefs.edit()
-                        .putString("usage_original_low_power", lowPower.ifBlank { "0" })
-                        .putString("usage_original_peak", peak.ifBlank { "null" })
-                        .putString("usage_original_min", min.ifBlank { "null" })
+                        .putString("usage_original_low_power", lowPowerResult.second.ifBlank { "0" })
+                        .putString("usage_original_peak", peakResult.second.ifBlank { "null" })
+                        .putString("usage_original_min", minResult.second.ifBlank { "null" })
                         .putBoolean("usage_profile_saved", true).apply()
                 }
                 val isHard = profile == "hard"
@@ -1431,22 +1613,32 @@ class MainActivity : Activity() {
                     )
                     val editor = prefs.edit()
                     for (item in extraSettings) {
-                        val parts = item.split(":")
-                        val value = runShell("settings get ${parts[0]} ${parts[1]}").second.trim()
-                        editor.putString("hard_original_${parts[0]}_${parts[1]}", value.ifBlank { "null" })
+                        val (namespace, key) = item.split(":", limit = 2)
+                        val result = runShell("settings get $namespace $key")
+                        if (result.first != 0) throw IllegalStateException("Não foi possível salvar o valor original de $key")
+                        editor.putString("hard_original_${namespace}_$key", result.second.trim().ifBlank { "null" })
                     }
                     editor.apply()
-                    runShell("settings put system screen_brightness 20")
-                    runShell("settings put system screen_off_timeout 15000")
-                    runShell("settings put system haptic_feedback_enabled 0")
-                    runShell("settings put global window_animation_scale 0")
-                    runShell("settings put global transition_animation_scale 0")
-                    runShell("settings put global animator_duration_scale 0")
+                    val hardCommands = listOf(
+                        "settings put system screen_brightness 20",
+                        "settings put system screen_off_timeout 15000",
+                        "settings put system haptic_feedback_enabled 0",
+                        "settings put global window_animation_scale 0",
+                        "settings put global transition_animation_scale 0",
+                        "settings put global animator_duration_scale 0"
+                    )
+                    val hardFailures = hardCommands.filter { runShell(it).first != 0 }
+                    if (hardFailures.isNotEmpty()) {
+                        throw IllegalStateException("A XOS recusou ${hardFailures.size} ajuste(s) do modo HARD; restaure os valores salvos")
+                    }
                 }
                 val lowPowerResult = runShell("settings put global low_power " + if (isEfficiency) "1" else "0")
                 if (lowPowerResult.first != 0) throw IllegalStateException("Não foi possível alterar economia do Android")
-                runShell("settings put system peak_refresh_rate 60.0")
-                runShell("settings put system min_refresh_rate 60.0")
+                val peakResult = runShell("settings put system peak_refresh_rate 60.0")
+                val minResult = runShell("settings put system min_refresh_rate 60.0")
+                if (peakResult.first != 0 || minResult.first != 0) {
+                    throw IllegalStateException("Não foi possível aplicar a preferência de 60 Hz; os valores originais continuam salvos para restauração")
+                }
 
                 var cpuPoliciesChanged = 0
                 if (isCooling) {
@@ -1473,7 +1665,6 @@ class MainActivity : Activity() {
                     val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
                     if (result.first == 0) stopped++
                 }
-                if (profile != "auto_cooling") runShell("am kill-all")
 
                 runOnUiThread {
                     status.text = when (profile) {
@@ -1498,7 +1689,7 @@ class MainActivity : Activity() {
             return
         }
         val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
-        status.text = "Fechando apps e solicitando limpeza de memória…"
+        status.text = "Solicitando parada dos apps selecionáveis…"
         executor.execute {
             var stopped = 0
             try {
@@ -1507,14 +1698,18 @@ class MainActivity : Activity() {
                         (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
                         packageManager.getLaunchIntentForPackage(app.packageName) != null
                 }
+                var failures = 0
                 for (app in candidates) {
-                    val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
-                    if (result.first == 0) stopped++
+                    try {
+                        val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
+                        if (result.first == 0) stopped++ else failures++
+                    } catch (_: Exception) {
+                        failures++
+                    }
                 }
-                runShell("am kill-all")
                 runOnUiThread {
-                    status.text = "Combo concluído: $stopped apps encerrados; pedido de encerramento de processos em cache concluído. Mantido: $keepPackage. O Android pode reiniciar processos."
-                    Toast.makeText(this, "Limpeza solicitada", Toast.LENGTH_LONG).show()
+                    status.text = "Concluído: $stopped apps solicitados para parada; falhas: $failures. O Android administra a RAM automaticamente; nenhum processo ou dado em cache foi apagado. Mantido: $keepPackage."
+                    Toast.makeText(this, "Apps selecionáveis processados", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 runOnUiThread { status.text = "Erro na limpeza: ${e.message ?: "erro desconhecido"}" }
@@ -1532,19 +1727,34 @@ class MainActivity : Activity() {
             try {
                 val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
                 if (!prefs.getBoolean("usage_profile_saved", false)) {
+                    prefs.edit().putBoolean("auto_thermal_cooling_active", false).apply()
                     runOnUiThread { status.text = "Nenhum perfil de energia salvo para restaurar." }
                     return@execute
                 }
-                val oldLowPower = prefs.getString("usage_original_low_power", "0") ?: "0"
-                runShell("settings put global low_power " + if (oldLowPower.trim() == "1") "1" else "0")
-                for ((key, setting) in listOf("usage_original_peak" to "peak_refresh_rate", "usage_original_min" to "min_refresh_rate")) {
-                    val old = prefs.getString(key, "null") ?: "null"
-                    if (old.trim() == "null") runShell("settings delete system $setting")
-                    else {
-                        val safe = old.trim().replace(Regex("[^0-9.]"), "")
-                        if (safe.isNotBlank()) runShell("settings put system $setting $safe")
+                val failures = mutableListOf<String>()
+                fun restoreSetting(namespace: String, key: String, old: String, label: String) {
+                    val command = if (old == "null") {
+                        "settings delete $namespace $key"
+                    } else if (old.matches(Regex("[0-9]+(\\.[0-9]+)?"))) {
+                        "settings put $namespace $key $old"
+                    } else {
+                        failures.add("$label (valor salvo inválido)")
+                        return
+                    }
+                    val result = runShell(command)
+                    if (result.first != 0) {
+                        val detail = result.second.take(80).takeIf { it.isNotBlank() }?.let { ": $it" } ?: ""
+                        failures.add("$label$detail")
                     }
                 }
+
+                val lowPower = prefs.getString("usage_original_low_power", "0") ?: "0"
+                val lowPowerResult = runShell("settings put global low_power " + if (lowPower.trim() == "1") "1" else "0")
+                if (lowPowerResult.first != 0) failures.add("economia de bateria")
+                for ((prefKey, setting) in listOf("usage_original_peak" to "peak_refresh_rate", "usage_original_min" to "min_refresh_rate")) {
+                    restoreSetting("system", setting, prefs.getString(prefKey, "null") ?: "null", setting)
+                }
+
                 val hardSettings = listOf(
                     "system:screen_brightness",
                     "system:screen_off_timeout",
@@ -1554,42 +1764,108 @@ class MainActivity : Activity() {
                     "global:animator_duration_scale"
                 )
                 for (item in hardSettings) {
-                    val parts = item.split(":")
-                    val key = "hard_original_${parts[0]}_${parts[1]}"
-                    val old = prefs.getString(key, null) ?: continue
-                    if (old == "null") runShell("settings delete ${parts[0]} ${parts[1]}")
-                    else if (old.matches(Regex("[0-9]+(\\.[0-9]+)?"))) {
-                        runShell("settings put ${parts[0]} ${parts[1]} $old")
-                    }
-                    prefs.edit().remove(key).apply()
+                    val (namespace, key) = item.split(":", limit = 2)
+                    val saved = prefs.getString("hard_original_${namespace}_$key", null) ?: continue
+                    restoreSetting(namespace, key, saved, key)
                 }
+
                 val count = prefs.getInt("usage_cpu_policy_count", 0)
                 var cpuRestored = 0
                 for (index in 0 until count) {
                     val saved = prefs.getString("usage_cpu_max_$index", null) ?: continue
                     val split = saved.lastIndexOf('=')
-                    if (split <= 0) continue
-                    val path = saved.substring(0, split)
-                    val value = saved.substring(split + 1).toLongOrNull() ?: continue
-                    if (path.matches(Regex("/sys/devices/system/cpu/cpufreq/policy[0-9]+/scaling_max_freq"))) {
-                        val result = runShell("echo $value > $path 2>&1; cat $path")
-                        if (result.second.trim().toLongOrNull() == value) cpuRestored++
+                    if (split <= 0) {
+                        failures.add("política CPU $index (registro inválido)")
+                        continue
                     }
-                    prefs.edit().remove("usage_cpu_max_$index").apply()
+                    val path = saved.substring(0, split)
+                    val value = saved.substring(split + 1).toLongOrNull()
+                    if (!path.matches(Regex("/sys/devices/system/cpu/cpufreq/policy[0-9]+/scaling_max_freq")) || value == null) {
+                        failures.add("política CPU $index (registro inválido)")
+                        continue
+                    }
+                    val result = runShell("echo $value > $path 2>&1; cat $path")
+                    if (result.first == 0 && result.second.trim().toLongOrNull() == value) cpuRestored++
+                    else failures.add("política CPU $index")
                 }
-                prefs.edit().putBoolean("usage_profile_saved", false).apply()
-                runOnUiThread { status.text = "Perfil restaurado. Políticas CPU restauradas: $cpuRestored. Apps encerrados não são reabertos automaticamente." }
+
+                if (failures.isEmpty()) {
+                    val editor = prefs.edit()
+                        .putBoolean("usage_profile_saved", false)
+                        .putBoolean("auto_thermal_cooling_active", false)
+                        .putInt("usage_cpu_policy_count", 0)
+                    for (item in hardSettings) {
+                        val (namespace, key) = item.split(":", limit = 2)
+                        editor.remove("hard_original_${namespace}_$key")
+                    }
+                    for (index in 0 until count) editor.remove("usage_cpu_max_$index")
+                    editor.apply()
+                    runOnUiThread { status.text = "Perfil restaurado. Políticas CPU restauradas: $cpuRestored. Apps encerrados não são reabertos automaticamente." }
+                } else {
+                    runOnUiThread {
+                        status.text = "Restauração incompleta (${failures.size} item(ns)). Os valores originais continuam salvos; corrija o acesso Shizuku e tente restaurar novamente."
+                    }
+                }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "Falha ao restaurar perfil: ${e.message ?: "erro desconhecido"}" }
+                runOnUiThread { status.text = "Falha ao restaurar perfil: ${e.message ?: "erro desconhecido"}. Os valores salvos foram mantidos para nova tentativa." }
             }
         }
     }
 
+    private fun formatNetworkRate(bytesPerSecond: Long): String = when {
+        bytesPerSecond < 1024L -> "$bytesPerSecond B/s"
+        bytesPerSecond < 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f KB/s", bytesPerSecond / 1024.0)
+        else -> String.format(java.util.Locale.US, "%.1f MB/s", bytesPerSecond / (1024.0 * 1024.0))
+    }
+
+    private fun accentColor(): Int {
+        val key = getSharedPreferences("turbolite_settings", MODE_PRIVATE).getString("accent_theme", "cyan")
+        return when (key) {
+            "violet" -> 0xFFB388FF.toInt()
+            "green" -> 0xFF54E6A5.toInt()
+            else -> 0xFF00D4FF.toInt()
+        }
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
+
+    private fun lighten(color: Int, amount: Float): Int {
+        val fraction = amount.coerceIn(0f, 1f)
+        fun channel(shift: Int): Int {
+            val value = color ushr shift and 0xFF
+            return (value + (255 - value) * fraction).toInt().coerceIn(0, 255)
+        }
+        return (0xFF shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    override fun onResume() {
+        super.onResume()
+        updatePermissionState()
+        if (selectedTabKey == "monitor") {
+            monitorHandler.removeCallbacks(monitorUpdater)
+            monitorHandler.post(monitorUpdater)
+        }
+        if (::autoThermalCheck.isInitialized && autoThermalCheck.isChecked) {
+            thermalHandler.removeCallbacks(thermalMonitor)
+            thermalHandler.post(thermalMonitor)
+        }
+    }
+
+    override fun onPause() {
+        monitorHandler.removeCallbacks(monitorUpdater)
+        thermalHandler.removeCallbacks(thermalMonitor)
+        super.onPause()
+    }
 
     override fun onDestroy() {
         thermalHandler.removeCallbacks(thermalMonitor)
+        monitorHandler.removeCallbacks(monitorUpdater)
         Shizuku.removeRequestPermissionResultListener(permissionListener)
+        Shizuku.removeBinderReceivedListener(binderReceivedListener)
+        Shizuku.removeBinderDeadListener(binderDeadListener)
         executor.shutdownNow()
         super.onDestroy()
     }
