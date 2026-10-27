@@ -364,9 +364,9 @@ class OverlayService : Service() {
                             var temperature: Float? = null
                             if (hasShizuku) {
                                 try {
-                                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk \\$1\u0020~\u0020/^[0-9]+(\\\\.[0-9]+)?$/\u0020{\u0020v=\\$1+0;\u0020if\u0020(v>max)\u0020max=v\u0020}\u0020END\u0020{\u0020if\u0020(max>0)\u0020printf\u0020\\\"%.1f\\\\n\\\",\u0020max\u0020}"
+                                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done"
                                     val (tempExitCode, rawTemp) = runShell(tempCmd)
-                                    temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw -> when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null } } else null
+                                    temperature = if (tempExitCode == 0) rawTemp.lineSequence().mapNotNull { it.trim().toFloatOrNull() }.mapNotNull { raw -> when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null } }.maxOrNull() else null
                                 } catch (_: Exception) { temperature = null }
                             }
                             if (temperature == null) {
