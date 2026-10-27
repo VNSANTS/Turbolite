@@ -1,6 +1,14 @@
 name: Build TurboLite Android Beta
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "*.gradle.kts"
+      - "gradle.properties"
+      - "settings.gradle.kts"
+      - ".github/workflows/build-android.yml"
   push:
     branches: [main]
     paths:

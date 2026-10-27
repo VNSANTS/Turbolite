@@ -12,11 +12,12 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
+import android.net.TrafficStats
+import android.content.IntentFilter
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
-import java.net.InetAddress
 import java.util.concurrent.Executors
 import rikka.shizuku.Shizuku
 
@@ -29,18 +30,34 @@ class OverlayService : Service() {
     @Volatile private var fpsText = "FPS: medindo…"
     @Volatile private var cpuText = "CPU: medindo…"
     @Volatile private var tempText = "Temp: indisponível"
+    @Volatile private var ramText = "lendo…"
+    @Volatile private var networkText = "Rede: medindo…"
+    private var previousRxBytes = -1L
+    private var previousTxBytes = -1L
+    private var previousNetworkAtMs = 0L
+    private var lastPingMeasureMs = 0L
     private var previousCpuTotal = 0L
     private var previousCpuIdle = 0L
     private var lastStatsMeasureMs = 0L
 
     private val refresh = object : Runnable {
         override fun run() {
-            updateRam()
+            val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+            if (prefs.getBoolean("show_ram", true)) updateRam()
+            if (prefs.getBoolean("show_network", true)) updateNetwork() else networkText = "Rede: desativada"
             panel?.text = buildText()
             val nowMs = SystemClock.elapsedRealtime()
-            if (nowMs - lastStatsMeasureMs >= 5000L) {
+            val wantsDeviceStats = prefs.getBoolean("show_cpu", false) ||
+                prefs.getBoolean("show_temp", false) || prefs.getBoolean("show_fps", true)
+            if (wantsDeviceStats && nowMs - lastStatsMeasureMs >= 5000L) {
                 lastStatsMeasureMs = nowMs
                 measureDeviceStats()
+            }
+            if (prefs.getBoolean("show_ping", false) && nowMs - lastPingMeasureMs >= 15000L) {
+                lastPingMeasureMs = nowMs
+                measurePing()
+            } else if (!prefs.getBoolean("show_ping", false)) {
+                pingText = "Ping: desativado"
             }
             handler.postDelayed(this, 2000)
         }
@@ -99,7 +116,6 @@ class OverlayService : Service() {
         try {
             windowManager.addView(view, params)
             handler.post(refresh)
-            measurePing()
         } catch (_: Exception) {
             stopSelf()
         }
@@ -111,8 +127,64 @@ class OverlayService : Service() {
         manager.getMemoryInfo(info)
         val used = (info.totalMem - info.availMem) / (1024 * 1024)
         val total = info.totalMem / (1024 * 1024)
-        getSharedPreferences("turbolite_overlay", MODE_PRIVATE).edit()
-            .putString("ram_value", "${used}/${total} MB").apply()
+        ramText = "${used}/${total} MB"
+    }
+
+
+    private fun updateNetwork() {
+        val rx = TrafficStats.getTotalRxBytes()
+        val tx = TrafficStats.getTotalTxBytes()
+        val now = SystemClock.elapsedRealtime()
+        if (rx < 0L || tx < 0L) {
+            networkText = "Rede: indisponível"
+            return
+        }
+        val elapsed = now - previousNetworkAtMs
+        if (previousRxBytes >= 0L && previousTxBytes >= 0L && elapsed > 0L) {
+            val rxRate = ((rx - previousRxBytes).coerceAtLeast(0L) * 1000L) / elapsed
+            val txRate = ((tx - previousTxBytes).coerceAtLeast(0L) * 1000L) / elapsed
+            networkText = "Rede ↓ ${formatRate(rxRate)}  ↑ ${formatRate(txRate)}"
+        } else {
+            networkText = "Rede: medindo…"
+        }
+        previousRxBytes = rx
+        previousTxBytes = tx
+        previousNetworkAtMs = now
+    }
+
+    private fun formatRate(bytesPerSecond: Long): String {
+        return when {
+            bytesPerSecond < 1024L -> "$bytesPerSecond B/s"
+            bytesPerSecond < 1024L * 1024L -> String.format(java.util.Locale.US, "%.1f KB/s", bytesPerSecond / 1024.0)
+            else -> String.format(java.util.Locale.US, "%.1f MB/s", bytesPerSecond / (1024.0 * 1024.0))
+        }
+    }
+
+    private fun runShell(command: String): Pair<Int, String> {
+        val process = Shizuku.newProcess(arrayOf("sh", "-c", command), null, null)
+        val stdout = StringBuilder()
+        val stderr = StringBuilder()
+        val outReader = Thread({ process.inputStream.bufferedReader().use { stdout.append(it.readText()) } }, "turbolite-overlay-stdout")
+            .apply { isDaemon = true; start() }
+        val errReader = Thread({ process.errorStream.bufferedReader().use { stderr.append(it.readText()) } }, "turbolite-overlay-stderr")
+            .apply { isDaemon = true; start() }
+        try {
+            if (!process.waitFor(8, java.util.concurrent.TimeUnit.SECONDS)) {
+                throw java.util.concurrent.TimeoutException("Comando de telemetria excedeu 8 segundos")
+            }
+            outReader.join(1_000)
+            errReader.join(1_000)
+            return process.exitValue() to (stdout.toString() + "\n" + stderr.toString()).trim()
+        } catch (e: InterruptedException) {
+            process.destroy()
+            process.destroyForcibly()
+            Thread.currentThread().interrupt()
+            throw e
+        } catch (e: Exception) {
+            process.destroy()
+            process.destroyForcibly()
+            throw e
+        }
     }
 
     private fun measurePing() {
@@ -121,66 +193,71 @@ class OverlayService : Service() {
                 if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
                     "Ping: requer Shizuku"
                 } else {
-                    val process = Shizuku.newProcess(arrayOf("sh", "-c", "ping -c 1 -W 1 1.1.1.1"), null, null)
-                    val output = process.inputStream.bufferedReader().use { it.readText() }
-                    process.waitFor()
+                    val (exitCode, output) = runShell("ping -c 1 -W 1 1.1.1.1")
                     val match = Regex("time[=<]([0-9.]+)").find(output)
-                    if (match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
+                    if (exitCode == 0 && match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
                 }
             } catch (_: Exception) {
                 "Ping: indisponível"
             }
             handler.post { panel?.text = buildText() }
-            handler.postDelayed({ if (panel != null) measurePing() }, 5000)
         }
     }
 
     private fun measureDeviceStats() {
         worker.execute {
+            val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+            val hasShizuku = try {
+                Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+            } catch (_: Exception) { false }
             try {
-                if (Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    val proc = Shizuku.newProcess(arrayOf("sh", "-c", "cat /proc/stat | head -n 1"), null, null)
-                    val line = proc.inputStream.bufferedReader().use { it.readLine() ?: "" }
-                    proc.waitFor()
+                if (prefs.getBoolean("show_cpu", false)) {
+                    val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
                     val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
                     if (values.size >= 4) {
                         val idle = values[3] + (values.getOrNull(4) ?: 0L)
                         val total = values.sum()
                         if (previousCpuTotal > 0L && total > previousCpuTotal) {
-                            val usage = ((total - previousCpuTotal - (idle - previousCpuIdle)).toDouble() * 100.0 / (total - previousCpuTotal)).toInt().coerceIn(0, 100)
+                            val delta = total - previousCpuTotal
+                            val usage = ((delta - (idle - previousCpuIdle)).toDouble() * 100.0 / delta)
+                                .toInt().coerceIn(0, 100)
                             cpuText = "CPU: $usage%"
+                        } else {
+                            cpuText = "CPU: calculando…"
                         }
                         previousCpuTotal = total
                         previousCpuIdle = idle
                     }
-                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
-                    val tp = Shizuku.newProcess(arrayOf("sh", "-c", tempCmd), null, null)
-                    val rawTemp = tp.inputStream.bufferedReader().use { it.readText().trim() }
-                    tp.waitFor()
-                    var temperature = rawTemp.toFloatOrNull()?.let { raw ->
-                        when {
-                            raw >= 1000f -> raw / 1000f
-                            raw >= 100f -> raw / 10f
-                            raw in 0.0f..120.0f -> raw
-                            else -> null
-                        }
+                }
+
+                if (prefs.getBoolean("show_temp", false)) {
+                    var temperature: Float? = null
+                    if (hasShizuku) {
+                        val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
+                        val (tempExitCode, rawTemp) = runShell(tempCmd)
+                        temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw ->
+                            when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null }
+                        } else null
                     }
                     if (temperature == null) {
-                        val battery = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys battery"), null, null)
-                        val batteryDump = battery.inputStream.bufferedReader().use { it.readText() }
-                        battery.waitFor()
-                        temperature = Regex("(?m)^\\s*temperature:\\s*(\\d+)")
-                            .find(batteryDump)?.groupValues?.get(1)?.toFloatOrNull()?.let { it / 10f }
+                        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                        val tenths = battery?.getIntExtra("temperature", -1) ?: -1
+                        if (tenths > 0) temperature = tenths / 10f
                     }
                     tempText = if (temperature != null && temperature in 0f..120f) {
-                        "Temp: ${"%.1f".format(java.util.Locale.US, temperature)}°C"
+                        "Temp: ${String.format(java.util.Locale.US, "%.1f", temperature)}°C (bateria/sensor)"
                     } else {
-                        "Temp: indisponível (XOS bloqueou sensores)"
+                        "Temp: indisponível"
                     }
-                    fpsText = measureSurfaceFlingerFps()
+                }
+
+                if (prefs.getBoolean("show_fps", true)) {
+                    fpsText = if (hasShizuku) measureSurfaceFlingerFps() else "FPS: requer Shizuku"
                 }
             } catch (_: Exception) {
-                if (fpsText == "FPS: medindo…") fpsText = "FPS: indisponível"
+                if (prefs.getBoolean("show_cpu", false)) cpuText = "CPU: indisponível"
+                if (prefs.getBoolean("show_temp", false)) tempText = "Temp: indisponível"
+                if (prefs.getBoolean("show_fps", true)) fpsText = "FPS: indisponível"
             }
             handler.post { panel?.text = buildText() }
         }
@@ -188,21 +265,19 @@ class OverlayService : Service() {
 
     private fun measureSurfaceFlingerFps(): String {
         return try {
-            val top = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | head -n 1"), null, null)
-            val topLine = top.inputStream.bufferedReader().use { it.readText() }
-            top.waitFor()
+            val (topExit, topLine) = runShell("dumpsys activity activities | grep -E 'topResumedActivity|mResumedActivity' | head -n 1")
+            if (topExit != 0) return "FPS: indisponível"
             val pkg = Regex("u0\\s+([A-Za-z0-9_.]+)").find(topLine)?.groupValues?.get(1)
                 ?: Regex("([A-Za-z0-9_]+(?:\\.[A-Za-z0-9_]+)+)/").find(topLine)?.groupValues?.get(1)
                 ?: return "FPS: sem app ativo"
-            val list = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys SurfaceFlinger --list | grep -F '${pkg}' | head -n 6"), null, null)
-            val layers = list.inputStream.bufferedReader().use { it.readLines() }
-            list.waitFor()
+            val (listExit, listOutput) = runShell("dumpsys SurfaceFlinger --list | grep -F '${pkg}' | head -n 6")
+            if (listExit != 0) return "FPS: indisponível"
+            val layers = listOutput.lines()
             val now = System.nanoTime()
             for (layer in layers) {
                 val safeLayer = layer.replace("'", "'\\''")
-                val p = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys SurfaceFlinger --latency '${safeLayer}'"), null, null)
-                val output = p.inputStream.bufferedReader().use { it.readText() }
-                p.waitFor()
+                val (latencyExit, output) = runShell("dumpsys SurfaceFlinger --latency '${safeLayer}'")
+                if (latencyExit != 0) continue
                 val timestamps = output.lineSequence().drop(1).mapNotNull { row ->
                     val cols = row.trim().split(Regex("\\s+"))
                     cols.getOrNull(1)?.toLongOrNull()?.takeIf { it > 0L }
@@ -222,7 +297,8 @@ class OverlayService : Service() {
         val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
         val lines = mutableListOf<String>()
         if (prefs.getBoolean("show_fps", true)) lines.add(fpsText)
-        if (prefs.getBoolean("show_ram", true)) lines.add("RAM: ${prefs.getString("ram_value", "lendo…")}")
+        if (prefs.getBoolean("show_ram", true)) lines.add("RAM: $ramText")
+        if (prefs.getBoolean("show_network", true)) lines.add(networkText)
         if (prefs.getBoolean("show_ping", false)) lines.add(pingText)
         if (prefs.getBoolean("show_cpu", false)) lines.add(cpuText)
         if (prefs.getBoolean("show_temp", false)) lines.add(tempText)

@@ -10,9 +10,9 @@ android {
     defaultConfig {
         applicationId = "com.vnsants.turbolite"
         minSdk = 26
-        targetSdk = 28
-        versionCode = 2
-        versionName = "0.2-beta"
+        targetSdk = 34
+        versionCode = 3
+        versionName = "0.3-beta"
     }
 
     compileOptions {
@@ -26,6 +26,6 @@ android {
 }
 
 dependencies {
-    implementation("dev.rikka.shizuku:api:12.2.0")
-    implementation("dev.rikka.shizuku:provider:12.2.0")
+    implementation("dev.rikka.shizuku:api:13.1.5")
+    implementation("dev.rikka.shizuku:provider:13.1.5")
 }
