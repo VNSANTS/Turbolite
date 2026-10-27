@@ -8,6 +8,13 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 - **Restaurar configurações originais:** recupera os valores salvos das animações. Não restaura apps que foram fechados.
 - **Sem limpeza destrutiva:** não apaga cache, dados ou logins.
 
+## Painel flutuante (beta experimental)
+- Janela pequena arrastável por cima de outros apps.
+- Alternância independente para RAM, ping e FPS.
+- RAM usa a informação de memória disponível do Android; ping usa um teste ICMP para 1.1.1.1 através do Shizuku, não necessariamente o servidor do jogo.
+- **FPS ainda não está medido nesta versão:** o painel mostra `FPS: -- (não medido)` até validarmos uma leitura real via SurfaceFlinger no XOS deste aparelho.
+- É necessário conceder a permissão Android “Sobrepor a outros apps”. O Shizuku deve estar iniciado e autorizado para a medição de ping.
+
 ## Próximas funções possíveis
 1. Perfis salvos: Normal, Jogo e Economia, sempre com opção de voltar.
 2. Lista de exclusão para apps que não devem ser fechados (mensagens, música, VPN, relógio).
