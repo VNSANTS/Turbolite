@@ -501,6 +501,7 @@ class MainActivity : Activity() {
         }
         root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val gamesStartIndex = root.childCount
         val gameSection = TextView(this).apply {
             text = "JOGOS E INTERFACE"
             textSize = 12f
@@ -566,6 +567,7 @@ class MainActivity : Activity() {
         }
         root.addView(gameStandardButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val energyStartIndex = root.childCount
         val energySection = TextView(this).apply {
             text = "BATERIA, TEMPERATURA E MEMÓRIA"
             textSize = 12f
@@ -656,8 +658,10 @@ class MainActivity : Activity() {
         }
         root.addView(restoreUsageButton, LinearLayout.LayoutParams(-1, dp(52)))
 
-        // Perfis ficam depois dos controles principais, evitando ocupar o topo da tela.
+        // Perfis ficam numa tela própria, separados das ações rápidas.
+        val profilesStartIndex = root.childCount
         addCustomProfilesSection(root)
+        val toolsStartIndex = root.childCount
 
         val toolsSection = TextView(this).apply {
             text = "PAINEL E MONITORAMENTO"
@@ -736,13 +740,81 @@ class MainActivity : Activity() {
         }
         root.addView(note)
 
+        // Divide os elementos existentes em quatro telas sem recriar nem remover funções.
+        for (index in 0 until root.childCount) {
+            val tab = when {
+                index < gamesStartIndex -> "home"
+                index < energyStartIndex -> "more"
+                index < profilesStartIndex -> "home"
+                index < toolsStartIndex -> "profiles"
+                else -> "monitor"
+            }
+            root.getChildAt(index).tag = tab
+        }
+
         val scroll = ScrollView(this).apply {
             isFillViewport = true
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
             setBackgroundColor(0xFF0B1020.toInt())
             addView(root)
         }
-        setContentView(scroll)
+        val page = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(0xFF070B16.toInt())
+        }
+        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+
+        val nav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(6), dp(7), dp(6), dp(7))
+            background = GradientDrawable().apply {
+                setColor(0xFF0B1423.toInt())
+                setStroke(dp(1), 0xFF18334D.toInt())
+            }
+        }
+        val navItems = listOf(
+            Triple("⌂", "Início", "home"),
+            Triple("◇", "Perfis", "profiles"),
+            Triple("◉", "Monitor", "monitor"),
+            Triple("☷", "Mais", "more")
+        )
+        val navButtons = mutableMapOf<String, TextView>()
+        fun selectTab(tab: String) {
+            for (index in 0 until root.childCount) {
+                val child = root.getChildAt(index)
+                child.visibility = if (child.tag == tab) android.view.View.VISIBLE else android.view.View.GONE
+            }
+            navButtons.forEach { (key, button) ->
+                val selected = key == tab
+                button.setTextColor(if (selected) 0xFF00D4FF.toInt() else 0xFF8EA3BB.toInt())
+                button.background = GradientDrawable().apply {
+                    cornerRadius = dp(13).toFloat()
+                    setColor(if (selected) 0xFF102A40.toInt() else 0x00000000)
+                    if (selected) setStroke(dp(1), 0xFF087A9D.toInt())
+                }
+            }
+            scroll.scrollTo(0, 0)
+        }
+        for ((symbol, label, tab) in navItems) {
+            val button = TextView(this).apply {
+                text = "$symbol\n$label"
+                gravity = Gravity.CENTER
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(dp(4), dp(7), dp(4), dp(7))
+                setOnClickListener { selectTab(tab) }
+            }
+            navButtons[tab] = button
+            nav.addView(button, LinearLayout.LayoutParams(0, dp(54), 1f).apply {
+                leftMargin = dp(3)
+                rightMargin = dp(3)
+            })
+        }
+        page.addView(nav, LinearLayout.LayoutParams(-1, -2))
+        setContentView(page)
         styleControls(root)
+        selectTab("home")
         if (getSharedPreferences("turbolite_settings", MODE_PRIVATE).getBoolean("auto_thermal_monitor_enabled", false)) {
             thermalHandler.post(thermalMonitor)
         }
