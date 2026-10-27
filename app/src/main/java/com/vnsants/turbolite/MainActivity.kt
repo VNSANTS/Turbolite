@@ -898,6 +898,11 @@ class MainActivity : Activity() {
             return
         }
         val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+        if (profile == "hard" && keepPackage == packageName) {
+            status.text = "Antes de ativar o MODO HARD, selecione na lista o único app que deseja manter aberto."
+            Toast.makeText(this, "Selecione primeiro o app que vai continuar aberto.", Toast.LENGTH_LONG).show()
+            return
+        }
         status.text = "Aplicando perfil $profile…"
         executor.execute {
             try {
