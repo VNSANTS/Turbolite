@@ -52,7 +52,7 @@ class MainActivity : Activity() {
         buildUi()
         val overlayPrefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
         if (!overlayPrefs.contains("show_fps")) {
-            overlayPrefs.edit().putBoolean("show_fps", false).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
+            overlayPrefs.edit().putBoolean("show_fps", true).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
         }
         loadAppsToKeep()
         updatePermissionState()
@@ -115,7 +115,7 @@ class MainActivity : Activity() {
 
         restoreButton = Button(this).apply {
             text = "RESTAURAR CONFIGURAÇÕES ORIGINAIS"
-            setOnClickListener { setAnimationMode(false) }
+            setOnClickListener { setAnimationMode(false); setRefreshRateMode(false) }
         }
         root.addView(restoreButton, LinearLayout.LayoutParams(-1, dp(54)))
 
