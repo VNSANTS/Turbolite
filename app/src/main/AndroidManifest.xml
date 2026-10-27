@@ -8,6 +8,8 @@
     <application
         android:allowBackup="false"
         android:label="TurboLite Beta"
+        android:icon="@drawable/ic_turbolite"
+        android:roundIcon="@drawable/ic_turbolite"
         android:theme="@android:style/Theme.Material.NoActionBar"
         android:supportsRtl="true">
         <activity
