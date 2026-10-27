@@ -216,7 +216,7 @@ class MainActivity : Activity() {
         }
         root.addView(coolingButton, LinearLayout.LayoutParams(-1, dp(52)))
         val cleanRamButton = Button(this).apply {
-            text = "COMBO: FECHAR APPS + LIMPAR RAM/CACHE"
+            text = "COMBO: FECHAR APPS + LIMPAR RAM"
             setOnClickListener { cleanRamAndBackgroundApps() }
         }
         root.addView(cleanRamButton, LinearLayout.LayoutParams(-1, dp(52)))
@@ -760,7 +760,6 @@ class MainActivity : Activity() {
                     if (result.first == 0) stopped++
                 }
                 runShell("am kill-all")
-                runShell("pm trim-caches 128M")
 
                 runOnUiThread {
                     status.text = when (profile) {
@@ -799,7 +798,7 @@ class MainActivity : Activity() {
                 runShell("am kill-all")
                 runShell("pm trim-caches 128M")
                 runOnUiThread {
-                    status.text = "Combo concluído: $stopped apps encerrados; limpeza de processos em cache e cache recuperável solicitada. Mantido: $keepPackage. O Android pode reiniciar processos."
+                    status.text = "Combo concluído: $stopped apps encerrados; limpeza de processos em cache solicitada. Mantido: $keepPackage. O Android pode reiniciar processos."
                     Toast.makeText(this, "Limpeza solicitada", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
