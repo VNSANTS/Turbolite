@@ -27,6 +27,7 @@ class MainActivity : Activity() {
     private lateinit var reloadButton: Button
     private lateinit var performanceButton: Button
     private lateinit var restoreButton: Button
+    private lateinit var refreshRateButton: Button
     private lateinit var overlayButton: Button
     private lateinit var stopOverlayButton: Button
     private lateinit var keepSpinner: Spinner
@@ -117,6 +118,12 @@ class MainActivity : Activity() {
             setOnClickListener { setAnimationMode(false) }
         }
         root.addView(restoreButton, LinearLayout.LayoutParams(-1, dp(54)))
+
+        refreshRateButton = Button(this).apply {
+            text = "TENTAR TAXA MÁXIMA DA TELA"
+            setOnClickListener { setRefreshRateMode(true) }
+        }
+        root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
 
         val overlayTitle = TextView(this).apply {
             text = "\nPAINEL FLUTUANTE"
@@ -325,6 +332,66 @@ class MainActivity : Activity() {
                     performanceButton.isEnabled = true
                     restoreButton.isEnabled = true
                 }
+            }
+        }
+    }
+
+
+    private fun setRefreshRateMode(enable: Boolean) {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+        refreshRateButton.isEnabled = false
+        executor.execute {
+            try {
+                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                val savedKey = "refresh_rates_saved"
+                if (enable) {
+                    if (!prefs.getBoolean(savedKey, false)) {
+                        val peak = runShell("settings get system peak_refresh_rate").second
+                        val min = runShell("settings get system min_refresh_rate").second
+                        prefs.edit()
+                            .putString("peak_refresh_rate", peak.ifBlank { "null" })
+                            .putString("min_refresh_rate", min.ifBlank { "null" })
+                            .putBoolean(savedKey, true).apply()
+                    }
+                    val dump = runShell("dumpsys display")
+                    val rates = Regex("refreshRate=([0-9]+(?:\\\\.[0-9]+)?)")
+                        .findAll(dump.second).mapNotNull { it.groupValues[1].toFloatOrNull() }
+                        .filter { it in 30f..240f }.toList()
+                    val maxRate = rates.maxOrNull()
+                        ?: throw IllegalStateException("O Android não informou os modos de tela")
+                    val value = String.format(java.util.Locale.US, "%.2f", maxRate)
+                    val peakResult = runShell("settings put system peak_refresh_rate " + value)
+                    val minResult = runShell("settings put system min_refresh_rate " + value)
+                    if (peakResult.first != 0 || minResult.first != 0) {
+                        throw IllegalStateException("O fabricante bloqueou a alteração")
+                    }
+                    runOnUiThread {
+                        status.text = "Solicitado modo " + value + " Hz. O XOS pode ignorar a preferência; confirme nas configurações da tela."
+                        Toast.makeText(this, "Preferência de " + value + " Hz aplicada (se aceita pelo sistema)", Toast.LENGTH_LONG).show()
+                    }
+                } else if (prefs.getBoolean(savedKey, false)) {
+                    for (key in listOf("peak_refresh_rate", "min_refresh_rate")) {
+                        val old = prefs.getString(key, "null") ?: "null"
+                        if (old == "null") {
+                            runShell("settings delete system " + key)
+                        } else {
+                            val safe = old.replace(Regex("[^0-9.]"), "")
+                            if (safe.isNotBlank()) runShell("settings put system " + key + " " + safe)
+                        }
+                    }
+                    prefs.edit().putBoolean(savedKey, false).apply()
+                    runOnUiThread { status.text = "Preferências de taxa de atualização restauradas." }
+                } else {
+                    runOnUiThread { status.text = "Nenhuma preferência de Hz salva para restaurar." }
+                }
+            } catch (e: Exception) {
+                runOnUiThread { status.text = "Taxa máxima não aplicada: " + (e.message ?: "recurso bloqueado pelo sistema") }
+            } finally {
+                runOnUiThread { refreshRateButton.isEnabled = true }
             }
         }
     }
