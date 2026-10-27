@@ -377,19 +377,20 @@ class MainActivity : Activity() {
     private fun updateMonitorDashboard() {
         if (::performanceCard.isInitialized) updatePerformanceCard(performanceCard)
         if (::currentModeCard.isInitialized) updateCurrentModeCard()
-        if (::monitorMetrics.isInitialized) {
-            monitorMetrics.text = performanceCard.text.toString()
-                .replace("STATUS DO SISTEMA", "INDICADORES DO SISTEMA") +
-                "\nFPS: estimativa disponível no painel flutuante com Shizuku"
-        }
+        val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val raw = battery?.getIntExtra("temperature", -1) ?: -1
+        val level = battery?.getIntExtra("level", -1) ?: -1
+        val scale = battery?.getIntExtra("scale", 100) ?: 100
+        val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
+        val temperature = if (raw > 0) String.format(java.util.Locale.US, "%.1f °C", raw / 10f) else "Indisponível"
+        val batteryLabel = if (batteryPct >= 0) "$batteryPct%" else "Indisponível"
         if (::monitorGauge.isInitialized) {
-            val battery = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val raw = battery?.getIntExtra("temperature", -1) ?: -1
-            monitorGauge.text = if (raw > 0) {
-                String.format(java.util.Locale.US, "🌡  TEMPERATURA\n%.1f°C\n\nTemperatura da bateria", raw / 10f)
-            } else {
-                "🌡  TEMPERATURA\nSensor de bateria indisponível"
-            }
+            monitorGauge.text = "✦  VISÃO GERAL DO DISPOSITIVO\n\n🔋  Bateria  $batteryLabel     •     🌡  $temperature\n\nTemperatura medida no sensor da bateria"
+        }
+        if (::monitorMetrics.isInitialized) {
+            val stats = if (::performanceCard.isInitialized) performanceCard.text.toString()
+                .replace("STATUS DO SISTEMA", "RESUMO DO SISTEMA") else "Indicadores do sistema ainda não disponíveis"
+            monitorMetrics.text = "◉  INDICADORES DO SISTEMA\n\n$stats\n\n▣  BATERIA E TEMPERATURA\nBateria: $batteryLabel\nTemperatura: $temperature\n\n⇅  DESEMPENHO\nFPS: estimativa no painel flutuante com Shizuku"
         }
     }
 
