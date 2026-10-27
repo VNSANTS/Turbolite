@@ -236,11 +236,11 @@ class MainActivity : Activity() {
                 val selected = profileSpinner.selectedItemPosition
                 val old = profiles.optJSONObject(selected)
                 val profile = JSONObject().put("name", name).put("emoji", emoji).put("actions", actions)
-                if (old != null && selected in 0 until profiles.length()) profiles.put(selected, profile)
-                else profiles.put(profile)
+                val updateExisting = old != null && selected in 0 until profiles.length() && old.optString("name") == name
+                if (updateExisting) profiles.put(selected, profile) else profiles.put(profile)
                 getSharedPreferences("turbolite_profiles", MODE_PRIVATE).edit().putString("profiles", profiles.toString()).apply()
-                refreshProfiles(if (old != null) selected else profiles.length() - 1)
-                Toast.makeText(this@MainActivity, "Perfil salvo neste aparelho.", Toast.LENGTH_SHORT).show()
+                refreshProfiles(if (updateExisting) selected else profiles.length() - 1)
+                Toast.makeText(this@MainActivity, if (updateExisting) "Perfil atualizado neste aparelho." else "Novo perfil criado neste aparelho.", Toast.LENGTH_SHORT).show()
             }
         }
         root.addView(saveButton, LinearLayout.LayoutParams(-1, dp(50)))
