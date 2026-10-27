@@ -49,8 +49,10 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         Shizuku.addRequestPermissionResultListener(permissionListener)
         buildUi()
-        getSharedPreferences("turbolite_overlay", MODE_PRIVATE).edit()
-            .putBoolean("show_fps", false).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
+        val overlayPrefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+        if (!overlayPrefs.contains("show_fps")) {
+            overlayPrefs.edit().putBoolean("show_fps", false).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
+        }
         loadAppsToKeep()
         updatePermissionState()
     }
