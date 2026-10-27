@@ -125,6 +125,18 @@ class MainActivity : Activity() {
         }
         root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val gamePerformanceButton = Button(this).apply {
+            text = "MODO DE JOGO: PERFORMANCE"
+            setOnClickListener { setGameMode("performance") }
+        }
+        root.addView(gamePerformanceButton, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val gameStandardButton = Button(this).apply {
+            text = "MODO DE JOGO: PADRÃO ANDROID"
+            setOnClickListener { setGameMode("standard") }
+        }
+        root.addView(gameStandardButton, LinearLayout.LayoutParams(-1, dp(54)))
+
         val overlayTitle = TextView(this).apply {
             text = "\nPAINEL FLUTUANTE"
             textSize = 18f
@@ -181,6 +193,8 @@ class MainActivity : Activity() {
                 "• Não força a parada de apps de sistema.\n" +
                 "• Não apaga cache, dados ou logins.\n" +
                 "• Modo desempenho: reduz animações do Android para 0,5x; não aumenta diretamente o FPS.\n" +
+                "• Modo de jogo: solicita performance ou padrão via cmd game para o app selecionado; a XOS pode não suportar o recurso.\n" +
+                "• Padrão Android não recupera um perfil proprietário anterior da XOS; use-o apenas se quiser remover o modo Performance.\n" +
                 "• Restaurar: volta às escalas de animação guardadas antes da primeira ativação.\n\n" +
                 "Antes de fechar apps, selecione o jogo que quer manter. Apps fechados podem perder downloads, reprodução, VPN ou notificações temporariamente; o Android pode reiniciá-los. " +
                 "A restauração recupera as animações, mas não reabre automaticamente os apps fechados. " +
@@ -392,6 +406,43 @@ class MainActivity : Activity() {
                 runOnUiThread { status.text = "Taxa máxima não aplicada: " + (e.message ?: "recurso bloqueado pelo sistema") }
             } finally {
                 runOnUiThread { refreshRateButton.isEnabled = true }
+            }
+        }
+    }
+
+    private fun setGameMode(mode: String) {
+        if (!hasShizukuPermission()) {
+            updatePermissionState()
+            Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        val targetPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+        if (targetPackage == packageName) {
+            status.text = "Selecione o jogo na lista antes de aplicar o modo de jogo."
+            Toast.makeText(this, "Selecione primeiro o jogo que deseja otimizar.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!targetPackage.matches(Regex("[A-Za-z0-9_.]+"))) {
+            status.text = "Nome de pacote inválido; nenhuma alteração foi feita."
+            return
+        }
+
+        status.text = "Solicitando modo de jogo $mode para $targetPackage…"
+        executor.execute {
+            try {
+                val result = runShell("cmd game mode $mode $targetPackage 2>&1")
+                runOnUiThread {
+                    status.text = if (result.first == 0) {
+                        "Comando de modo de jogo enviado para $targetPackage. Reinicie o jogo e compare o desempenho. A XOS pode ignorar ou não oferecer esse recurso."
+                    } else {
+                        "Modo de jogo não disponível ou rejeitado pelo sistema (código ${result.first}): ${result.second.take(220)}"
+                    }
+                }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    status.text = "Falha ao solicitar modo de jogo: ${e.message ?: "erro desconhecido"}"
+                }
             }
         }
     }
