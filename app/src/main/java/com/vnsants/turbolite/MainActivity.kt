@@ -483,7 +483,7 @@ class MainActivity : Activity() {
         }
         brandCopy.addView(title)
         val subtitle = TextView(this).apply {
-            text = "CONTROLE • MONITORAMENTO • PERFIS"
+            text = "MAIS CONTROLE. MAIS DESEMPENHO."
             textSize = 10f
             letterSpacing = 0.07f
             setTextColor(accentColor())
@@ -491,7 +491,7 @@ class MainActivity : Activity() {
         }
         brandCopy.addView(subtitle)
         val version = TextView(this).apply {
-            text = "BETA • ANDROID 14 • SEM ROOT"
+            text = "ANDROID 14  •  SHIZUKU  •  SEM ROOT"
             textSize = 10f
             setTextColor(0xFF9CAAC4.toInt())
         }
@@ -980,10 +980,10 @@ class MainActivity : Activity() {
         }
         val navItems = listOf(
             Triple("⌂", "Início", "home"),
-            Triple("⚙", "Perfis", "profiles"),
-            Triple("◉", "Monitor", "monitor"),
-            Triple("☷", "Config.", "settings"),
-            Triple("✦", "Jogos", "games")
+            Triple("◉", "Perfis", "profiles"),
+            Triple("◷", "Monitor", "monitor"),
+            Triple("✦", "Jogos", "games"),
+            Triple("☷", "Mais", "settings")
         )
         val navButtons = mutableMapOf<String, TextView>()
         fun selectTab(tab: String) {
@@ -1086,7 +1086,8 @@ class MainActivity : Activity() {
             }
         } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
                 "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "BATERIA, TEMPERATURA E MEMÓRIA",
-                "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO"
+                "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO", "MONITORAMENTO",
+                "CONFIGURAÇÕES", "JOGOS E INTERFACE"
             )) {
             view.background = GradientDrawable().apply {
                 cornerRadius = dp(12).toFloat()
@@ -1094,6 +1095,9 @@ class MainActivity : Activity() {
                 setStroke(dp(1), withAlpha(accentColor(), 0x35))
             }
             view.setPadding(dp(12), dp(12), dp(12), dp(12))
+            view.textSize = 12f
+            view.letterSpacing = 0.08f
+            view.typeface = Typeface.create("sans-serif", Typeface.BOLD)
             val params = view.layoutParams
             if (params is LinearLayout.LayoutParams) {
                 params.topMargin = dp(14)
