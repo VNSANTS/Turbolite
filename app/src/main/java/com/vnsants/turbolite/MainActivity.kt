@@ -488,18 +488,18 @@ class MainActivity : Activity() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(22), dp(18), dp(24))
-            setBackgroundColor(0xFF070B16.toInt())
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF070B16.toInt(), 0xFF0A1424.toInt(), 0xFF070B16.toInt()))
         }
 
         // Hero da identidade TurboLite: gamer profissional, azul profundo e ciano.
         val hero = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(18), dp(16), dp(18))
+            setPadding(dp(16), dp(20), dp(16), dp(20))
             background = GradientDrawable().apply {
-                setColor(0xFF101A29.toInt())
-                cornerRadius = dp(20).toFloat()
-                setStroke(dp(1), 0xFF26364A.toInt())
+                colors = intArrayOf(0xFF13283B.toInt(), 0xFF101A29.toInt(), 0xFF101626.toInt())
+                cornerRadius = dp(22).toFloat()
+                setStroke(dp(1), 0xFF28516A.toInt())
             }
         }
         val brandMark = android.widget.ImageView(this).apply {
@@ -513,7 +513,8 @@ class MainActivity : Activity() {
         }
         val title = TextView(this).apply {
             text = "TurboLite"
-            textSize = 29f
+            textSize = 30f
+            setShadowLayer(dp(12).toFloat(), 0f, 0f, 0x5500D4FF)
             setTextColor(0xFFF2F8FF.toInt())
             typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
             letterSpacing = -0.025f
@@ -565,8 +566,8 @@ class MainActivity : Activity() {
         status.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
             cornerRadius = dp(14).toFloat()
-            setColor(0xFF121D30.toInt())
-            setStroke(dp(1), 0xFF263B57.toInt())
+            colors = intArrayOf(0xFF14253A.toInt(), 0xFF101B2D.toInt())
+            setStroke(dp(1), 0xFF29435E.toInt())
         }
         status.setPadding(dp(16), dp(14), dp(16), dp(14))
         status.minimumHeight = dp(52)
@@ -583,8 +584,8 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(18).toFloat()
-                setColor(0xFF101B2D.toInt())
-                setStroke(dp(1), withAlpha(accentColor(), 0x70))
+                colors = intArrayOf(0xFF14263A.toInt(), 0xFF0F1A2B.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x95))
             }
             elevation = dp(2).toFloat()
             setLineSpacing(dp(3).toFloat(), 1f)
@@ -600,9 +601,9 @@ class MainActivity : Activity() {
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(16), dp(12), dp(16), dp(12))
             background = GradientDrawable().apply {
-                setColor(0xFF101A29.toInt())
-                cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), 0xFF26364A.toInt())
+                colors = intArrayOf(0xFF152438.toInt(), 0xFF101A29.toInt())
+                cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), 0xFF2B455D.toInt())
             }
         }
         root.addView(currentModeCard, LinearLayout.LayoutParams(-1, dp(74)).apply { bottomMargin = dp(10) })
@@ -1161,8 +1162,8 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER
             setPadding(dp(6), dp(7), dp(6), dp(7))
             background = GradientDrawable().apply {
-                setColor(0xFF0B1423.toInt())
-                setStroke(dp(1), 0xFF24364F.toInt())
+                colors = intArrayOf(0xFF101F31.toInt(), 0xFF0B1423.toInt())
+                setStroke(dp(1), 0xFF2A435C.toInt())
             }
             elevation = dp(5).toFloat()
         }
@@ -1363,17 +1364,21 @@ class MainActivity : Activity() {
             val caution = label.contains("HARD") || label.contains("EXCLUIR") ||
                 label.contains("FECHAR OS OUTROS APPS") || label.contains("FECHAR APPS")
             val shape = GradientDrawable().apply {
-                cornerRadius = dp(14).toFloat()
-                setColor(if (primary) accentColor() else 0xFF172233.toInt())
-                setStroke(dp(1), if (primary) accentColor() else 0xFF2A3A50.toInt())
+                cornerRadius = dp(17).toFloat()
+                if (primary) {
+                    colors = intArrayOf(0xFF5BE0FF.toInt(), accentColor(), 0xFF00A8D6.toInt())
+                } else {
+                    colors = intArrayOf(0xFF1B2B40.toInt(), 0xFF142033.toInt())
+                }
+                setStroke(dp(1), if (primary) 0xFF62E4FF.toInt() else 0xFF30465F.toInt())
             }
             view.background = android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(if (primary) 0x44FFFFFF else withAlpha(accentColor(), 0x35)),
                 shape,
                 shape.constantState?.newDrawable()?.mutate()
             )
-            view.elevation = 0f
-            view.minimumHeight = maxOf(view.minimumHeight, dp(48))
+            view.elevation = if (primary) dp(2).toFloat() else 0f
+            view.minimumHeight = maxOf(view.minimumHeight, dp(50))
             view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAF0F8.toInt())
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
@@ -1438,9 +1443,9 @@ class MainActivity : Activity() {
             view.setPadding(dp(14), dp(8), dp(14), dp(8))
             view.background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
-                cornerRadius = dp(12).toFloat()
-                setColor(0xFF121D30.toInt())
-                setStroke(dp(1), 0xFF263B57.toInt())
+                cornerRadius = dp(14).toFloat()
+                colors = intArrayOf(0xFF14243A.toInt(), 0xFF101B2D.toInt())
+                setStroke(dp(1), 0xFF304A65.toInt())
             }
         }
         if (view is android.view.ViewGroup) {
