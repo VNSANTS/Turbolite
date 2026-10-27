@@ -1,6 +1,7 @@
 package com.vnsants.turbolite
 
 import android.app.Activity
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -46,6 +47,7 @@ class MainActivity : Activity() {
     private lateinit var dpiInput: EditText
     private lateinit var dpiApplyButton: Button
     private lateinit var dpiRestoreButton: Button
+    private lateinit var gameFocusButton: Button
     private lateinit var keepSpinner: Spinner
     private var userApps: List<ApplicationInfo> = emptyList()
     private var keepPackages: List<String> = emptyList()
@@ -728,6 +730,50 @@ class MainActivity : Activity() {
         }
         root.addView(gameStandardButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val gameToolsTitle = TextView(this).apply {
+            text = "\nCENTRAL DE JOGO"
+            textSize = 18f
+            setTextColor(0xFFFFFFFF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(12), 0, dp(4))
+        }
+        root.addView(gameToolsTitle)
+        val gameToolsHint = TextView(this).apply {
+            text = "Atalhos para o app selecionado. Foco de jogo usa Não Perturbe e exige acesso especial; desligue-o aqui para restaurar o filtro anterior. Recursos do Android/XOS variam por modelo."
+            textSize = 13f
+            setTextColor(0xFFB8C4D9.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        root.addView(gameToolsHint)
+        root.addView(Button(this).apply {
+            text = "ABRIR JOGO SELECIONADO"
+            setOnClickListener { launchSelectedGame() }
+        }, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(Button(this).apply {
+            text = "SESSÃO COMPETITIVA • PERFORMANCE + TELA"
+            setOnClickListener {
+                setAnimationMode(true)
+                setRefreshRateMode(true)
+                setGameMode("performance")
+            }
+        }, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(Button(this).apply {
+            text = "SESSÃO LONGA • ECONOMIA + JOGO"
+            setOnClickListener {
+                applyUsageProfile("efficiency")
+                setGameMode("battery")
+            }
+        }, LinearLayout.LayoutParams(-1, dp(52)))
+        gameFocusButton = Button(this).apply {
+            text = gameFocusButtonLabel()
+            setOnClickListener { toggleGameFocus() }
+        }
+        root.addView(gameFocusButton, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(Button(this).apply {
+            text = "MOSTRAR INDICADORES FLUTUANTES"
+            setOnClickListener { startOverlay() }
+        }, LinearLayout.LayoutParams(-1, dp(52)))
+
         val energyStartIndex = root.childCount
         val energySection = TextView(this).apply {
             text = "PERFIS DE DESEMPENHO"
@@ -747,7 +793,7 @@ class MainActivity : Activity() {
         }
         root.addView(mediaTitle)
         val mediaNote = TextView(this).apply {
-            text = "Selecione acima o app que quer manter aberto (ex.: Instagram). Streaming reduz consumo moderadamente; resfriamento usa economia máxima disponível e tenta limitar CPU se o aparelho permitir."
+            text = "Selecione um perfil para solicitar ajustes reversíveis. Streaming mantém apps abertos; eficiência solicita economia do Android; resfriamento também tenta limitar CPU quando o fabricante permite. A XOS pode ignorar ajustes e nenhum deles garante menor temperatura ou mais FPS."
             textSize = 13f
             setTextColor(0xFFB8C4D9.toInt())
             setPadding(0, 0, 0, dp(8))
@@ -770,14 +816,7 @@ class MainActivity : Activity() {
         root.addView(coolingButton, LinearLayout.LayoutParams(-1, dp(52)))
         val hardModeButton = Button(this).apply {
             text = "☠ MODO HARD • ECONOMIA EXTREMA"
-            setOnClickListener {
-                android.app.AlertDialog.Builder(this@MainActivity)
-                    .setTitle("Ativar economia extrema?")
-                    .setMessage("O TurboLite vai tentar manter apenas o app selecionado, encerrar outros apps de usuário, ativar economia do Android, solicitar 60 Hz, reduzir brilho e encurtar o tempo de tela. Notificações e tarefas em segundo plano podem parar. Apps do sistema não podem ser totalmente bloqueados sem root.")
-                    .setNegativeButton("Cancelar", null)
-                    .setPositiveButton("ATIVAR MODO HARD") { _, _ -> applyUsageProfile("hard") }
-                    .show()
-            }
+            setOnClickListener { applyUsageProfile("hard") }
         }
         root.addView(hardModeButton, LinearLayout.LayoutParams(-1, dp(58)))
         autoThermalCheck = CheckBox(this).apply {
@@ -1209,10 +1248,22 @@ class MainActivity : Activity() {
             color = 0xFF26364A.toInt(); strokeWidth = dp(1).toFloat()
         }
         private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = dp(10).toFloat() }
+        private val seriesColors = intArrayOf(0xFF00D4FF.toInt(), 0xFF54E6A5.toInt(), 0xFFFFB45E.toInt())
+        private val seriesPaths = Array(3) { Path() }
+        private val seriesPaints = Array(3) { index ->
+            Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = seriesColors[index]; style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat()
+                strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+            }
+        }
         private var samples: List<MetricSample> = emptyList()
 
         fun setSamples(value: List<MetricSample>) {
             samples = value
+            val latest = value.lastOrNull()
+            contentDescription = latest?.let {
+                "Medições recentes. CPU ${it.cpu?.let { cpu -> "$cpu por cento" } ?: "indisponível"}; RAM ${it.ram} por cento; temperatura ${it.temperature?.let { temp -> String.format(java.util.Locale.getDefault(), "%.1f graus", temp) } ?: "indisponível"}."
+            } ?: "Gráfico de CPU, RAM e temperatura aguardando leituras."
             invalidate()
         }
 
@@ -1234,27 +1285,24 @@ class MainActivity : Activity() {
                 textPaint.color = 0xFF91A6BF.toInt()
                 canvas.drawText("Aguardando leituras para formar o histórico", left, height / 2f, textPaint)
             } else {
-                fun plot(color: Int, valueAt: (MetricSample) -> Float?) {
-                    val path = Path()
+                for (series in 0..2) {
+                    val path = seriesPaths[series]
+                    path.reset()
                     var started = false
                     val denom = (samples.size - 1).coerceAtLeast(1)
                     samples.forEachIndexed { index, sample ->
-                        val value = valueAt(sample)?.coerceIn(0f, 100f) ?: return@forEachIndexed
+                        val raw = when (series) {
+                            0 -> sample.cpu?.toFloat()
+                            1 -> sample.ram.toFloat()
+                            else -> sample.temperature?.let { c -> (c - 25f) * 4f }
+                        } ?: return@forEachIndexed
+                        val value = raw.coerceIn(0f, 100f)
                         val x = left + (right - left) * index / denom.toFloat()
                         val y = bottom - (bottom - top) * value / 100f
                         if (!started) { path.moveTo(x, y); started = true } else path.lineTo(x, y)
                     }
-                    if (started) {
-                        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                            this.color = color; style = Paint.Style.STROKE; strokeWidth = dp(2).toFloat()
-                            strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
-                        }
-                        canvas.drawPath(path, linePaint)
-                    }
+                    if (started) canvas.drawPath(path, seriesPaints[series])
                 }
-                plot(0xFF00D4FF.toInt()) { it.cpu?.toFloat() }
-                plot(0xFF54E6A5.toInt()) { it.ram.toFloat() }
-                plot(0xFFFFB45E.toInt()) { it.temperature?.let { c -> ((c - 25f) * 4f).coerceIn(0f, 100f) } }
             }
             val legendY = height - dp(12).toFloat()
             textPaint.color = 0xFF00D4FF.toInt(); canvas.drawText("● CPU", left, legendY, textPaint)
@@ -1593,10 +1641,28 @@ class MainActivity : Activity() {
     }
 
     private fun readDpiState(): Pair<Int?, Boolean> {
-        val output = runShell("wm density").second
+        val result = runShell("wm density")
+        if (result.first != 0) throw IllegalStateException(result.second.ifBlank { "Android não permitiu ler a densidade" })
+        val output = result.second
         val override = Regex("Override density:\\s*(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
         val physical = Regex("Physical density:\\s*(\\d+)").find(output)?.groupValues?.get(1)?.toIntOrNull()
         return Pair(override ?: physical, override != null)
+    }
+
+    private fun applyDpiOnWorker(value: Int) {
+        val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+        if (!prefs.getBoolean("dpi_saved", false)) {
+            val state = readDpiState()
+            prefs.edit()
+                .putInt("dpi_original_value", state.first ?: -1)
+                .putBoolean("dpi_original_override", state.second)
+                .putBoolean("dpi_saved", true)
+                .apply()
+        }
+        val result = runShell("wm density $value")
+        if (result.first != 0) throw IllegalStateException(result.second.ifBlank { "Android recusou a alteração" })
+        val confirmed = readDpiState()
+        if (confirmed.first != value || !confirmed.second) throw IllegalStateException("O Android não confirmou a nova densidade")
     }
 
     private fun applyRecommendedDpi() {
@@ -1605,15 +1671,26 @@ class MainActivity : Activity() {
             Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
             return
         }
+        dpiApplyButton.isEnabled = false
+        dpiRestoreButton.isEnabled = false
         executor.execute {
             try {
                 val (current, _) = readDpiState()
                 if (current == null) throw IllegalStateException("Não consegui ler a densidade atual")
                 val recommended = (current * 0.90f).toInt().coerceIn(120, 1000)
-                runOnUiThread { dpiInput.setText(recommended.toString()) }
-                applyDpi(recommended)
+                applyDpiOnWorker(recommended)
+                runOnUiThread {
+                    dpiInput.setText(recommended.toString())
+                    status.text = "DPI definida para $recommended e confirmada pelo Android. Isso altera o tamanho da interface, não garante mais FPS."
+                    Toast.makeText(this, "DPI $recommended aplicada", Toast.LENGTH_LONG).show()
+                }
             } catch (e: Exception) {
-                runOnUiThread { status.text = "Não foi possível calcular a DPI: ${e.message}" }
+                runOnUiThread { status.text = "Não foi possível aplicar a DPI recomendada: ${e.message}" }
+            } finally {
+                runOnUiThread {
+                    dpiApplyButton.isEnabled = true
+                    dpiRestoreButton.isEnabled = true
+                }
             }
         }
     }
@@ -1637,19 +1714,9 @@ class MainActivity : Activity() {
         dpiRestoreButton.isEnabled = false
         executor.execute {
             try {
-                val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
-                if (!prefs.getBoolean("dpi_saved", false)) {
-                    val state = readDpiState()
-                    prefs.edit()
-                        .putInt("dpi_original_value", state.first ?: -1)
-                        .putBoolean("dpi_original_override", state.second)
-                        .putBoolean("dpi_saved", true)
-                        .apply()
-                }
-                val result = runShell("wm density $value")
-                if (result.first != 0) throw IllegalStateException(result.second.ifBlank { "Android recusou a alteração" })
+                applyDpiOnWorker(value)
                 runOnUiThread {
-                    status.text = "DPI definida para $value. A interface pode mudar de tamanho; isso não garante aumento de FPS."
+                    status.text = "DPI definida para $value e confirmada pelo Android. Isso altera o tamanho da interface, não garante mais FPS."
                     Toast.makeText(this, "DPI $value aplicada", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
@@ -1693,6 +1760,73 @@ class MainActivity : Activity() {
                 runOnUiThread { dpiRestoreButton.isEnabled = true }
             }
         }
+    }
+
+    private fun launchSelectedGame() {
+        val targetPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+        if (targetPackage == packageName) {
+            status.text = "Escolha um jogo no seletor de app antes de abrir."
+            Toast.makeText(this, "Selecione um jogo primeiro", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            val launchIntent = packageManager.getLaunchIntentForPackage(targetPackage)
+            if (launchIntent == null) {
+                status.text = "Não há uma tela de abertura disponível para $targetPackage."
+                return
+            }
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(launchIntent)
+            status.text = "Abrindo $targetPackage."
+        } catch (e: Exception) {
+            status.text = "Não foi possível abrir o jogo: ${e.message ?: "atividade indisponível"}"
+        }
+    }
+
+    private fun gameFocusButtonLabel(): String = if (
+        getSharedPreferences("turbolite_settings", MODE_PRIVATE).getBoolean("game_dnd_active", false)
+    ) "DESATIVAR FOCO DE JOGO • RESTAURAR ALERTAS" else "FOCO DE JOGO • NÃO PERTURBE"
+
+    private fun toggleGameFocus() {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        if (!manager.isNotificationPolicyAccessGranted) {
+            try {
+                startActivity(Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS))
+                status.text = "Ative o acesso de Não Perturbe para o TurboLite nas configurações que abriram; depois retorne aqui."
+            } catch (e: Exception) {
+                status.text = "Não foi possível abrir o acesso de Não Perturbe: ${e.message ?: "configuração indisponível"}"
+            }
+            return
+        }
+        val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+        if (prefs.getBoolean("game_dnd_active", false)) {
+            val previous = prefs.getInt("game_dnd_previous_filter", NotificationManager.INTERRUPTION_FILTER_ALL)
+            try {
+                manager.setInterruptionFilter(previous)
+                prefs.edit().putBoolean("game_dnd_active", false).apply()
+                gameFocusButton.text = gameFocusButtonLabel()
+                status.text = "Filtro de notificações anterior restaurado."
+            } catch (e: Exception) {
+                status.text = "Não foi possível restaurar Não Perturbe: ${e.message ?: "acesso recusado"}"
+            }
+            return
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Ativar foco de jogo?")
+            .setMessage("O Android vai usar o filtro Não Perturbe. Chamadas, alarmes e contatos permitidos seguem as regras configuradas no próprio Android. Ao terminar, use o botão de restauração aqui para voltar ao filtro anterior.")
+            .setNegativeButton("Cancelar", null)
+            .setPositiveButton("ATIVAR FOCO") { _, _ ->
+                try {
+                    prefs.edit().putInt("game_dnd_previous_filter", manager.currentInterruptionFilter).apply()
+                    manager.setInterruptionFilter(NotificationManager.INTERRUPTION_FILTER_PRIORITY)
+                    prefs.edit().putBoolean("game_dnd_active", true).apply()
+                    gameFocusButton.text = gameFocusButtonLabel()
+                    status.text = "Foco de jogo ativo. As regras de prioridade seguem as exceções de Não Perturbe do Android. Desative aqui para restaurar."
+                } catch (e: Exception) {
+                    status.text = "Não foi possível ativar Não Perturbe: ${e.message ?: "acesso recusado"}"
+                }
+            }
+            .show()
     }
 
     private fun setGameMode(mode: String) {
@@ -1782,6 +1916,19 @@ class MainActivity : Activity() {
 
 
     private fun applyUsageProfile(profile: String) {
+        if (profile == "hard") {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Ativar modo HARD?")
+                .setMessage("Este modo altera economia, tela e brilho e solicita parada de outros apps de usuário. Isso pode interromper música, downloads, VPN e notificações. O Android pode reabri-los; dados e logins não são apagados.")
+                .setNegativeButton("Cancelar", null)
+                .setPositiveButton("ATIVAR") { _, _ -> applyUsageProfileNow(profile) }
+                .show()
+            return
+        }
+        applyUsageProfileNow(profile)
+    }
+
+    private fun applyUsageProfileNow(profile: String) {
         if (!hasShizukuPermission()) {
             updatePermissionState()
             Toast.makeText(this, "Inicie e autorize o Shizuku primeiro.", Toast.LENGTH_LONG).show()
@@ -1880,7 +2027,7 @@ class MainActivity : Activity() {
                 }
 
                 var stopped = 0
-                val candidates = if (profile == "auto_cooling") emptyList() else packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
+                val candidates = if (profile != "hard") emptyList() else packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
                     app.packageName != packageName && app.packageName != keepPackage &&
                         (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
                         packageManager.getLaunchIntentForPackage(app.packageName) != null
@@ -1894,11 +2041,11 @@ class MainActivity : Activity() {
                 runOnUiThread {
                     if (::currentModeCard.isInitialized) updateCurrentModeCard()
                     status.text = when (profile) {
-                        "streaming" -> "Streaming ativado: equilíbrio, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage. A XOS pode ignorar a preferência de Hz."
-                        "efficiency" -> "Eficiência ativada: economia de bateria, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage."
+                        "streaming" -> "Streaming ativado: equilíbrio e 60 Hz solicitados. Apps continuam abertos; a XOS pode ignorar a preferência de Hz."
+                        "efficiency" -> "Eficiência ativada: economia de bateria e 60 Hz solicitados. Apps continuam abertos."
                         "hard" -> "MODO HARD ativado. Mantido: $keepPackage; $stopped apps de usuário encerrados. Economia do Android ligada, brilho reduzido, tela apaga em 15 s e animações/desbloqueios táteis reduzidos. CPU limitada: $cpuPoliciesChanged políticas. Apps do sistema podem continuar ativos."
                         "auto_cooling" -> "Resfriamento automático ativado sem fechar apps: economia máxima, 60 Hz solicitado. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite."
-                        else -> "Resfriamento solicitado: economia máxima, 60 Hz e $stopped apps encerrados. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite; apague a tela e pare de usar enquanto esfria."
+                        else -> "Resfriamento solicitado: economia máxima e 60 Hz. Apps continuam abertos. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite; apague a tela e pare de usar enquanto esfria."
                     }
                     Toast.makeText(this, "Perfil aplicado. App mantido: $keepPackage", Toast.LENGTH_LONG).show()
                 }
@@ -2073,6 +2220,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         updatePermissionState()
+        if (::gameFocusButton.isInitialized) gameFocusButton.text = gameFocusButtonLabel()
         if (selectedTabKey == "monitor") {
             monitorHandler.removeCallbacks(monitorUpdater)
             monitorHandler.post(monitorUpdater)
