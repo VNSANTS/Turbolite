@@ -354,7 +354,7 @@ class MainActivity : Activity() {
                     previousCpuIdle = idle
                 }
             } catch (_: Exception) { }
-            card.text = "STATUS DE DESEMPENHO  •  AO VIVO\n" +
+            card.text = "STATUS DE DESEMPENHO\n" +
                 "CPU: $cpuText     RAM: $usedMb / $totalMb MB\n" +
                 "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\n" +
                 "Temperatura da bateria: $temp"
