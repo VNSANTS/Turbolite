@@ -4,9 +4,9 @@ import android.app.ActivityManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -18,12 +18,14 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.TextView
+import android.widget.LinearLayout
 import java.util.concurrent.Executors
 import rikka.shizuku.Shizuku
 
 class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
-    private var panel: TextView? = null
+    private var panel: LinearLayout? = null
+    private var metricsText: TextView? = null
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var pingText = "Ping: medindo…"
@@ -39,21 +41,23 @@ class OverlayService : Service() {
     private var previousCpuTotal = 0L
     private var previousCpuIdle = 0L
     private var lastStatsMeasureMs = 0L
+    @Volatile private var statsMeasureBusy = false
+    @Volatile private var pingMeasureBusy = false
 
     private val refresh = object : Runnable {
         override fun run() {
             val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
             if (prefs.getBoolean("show_ram", true)) updateRam()
             if (prefs.getBoolean("show_network", true)) updateNetwork() else networkText = "Rede: desativada"
-            panel?.text = buildText()
+            renderMetrics()
             val nowMs = SystemClock.elapsedRealtime()
             val wantsDeviceStats = prefs.getBoolean("show_cpu", false) ||
-                prefs.getBoolean("show_temp", false) || prefs.getBoolean("show_fps", true)
-            if (wantsDeviceStats && nowMs - lastStatsMeasureMs >= 5000L) {
+                prefs.getBoolean("show_temp", false) || prefs.getBoolean("show_fps", false)
+            if (wantsDeviceStats && nowMs - lastStatsMeasureMs >= 5000L && !statsMeasureBusy) {
                 lastStatsMeasureMs = nowMs
                 measureDeviceStats()
             }
-            if (prefs.getBoolean("show_ping", false) && nowMs - lastPingMeasureMs >= 15000L) {
+            if (prefs.getBoolean("show_ping", false) && nowMs - lastPingMeasureMs >= 15000L && !pingMeasureBusy) {
                 lastPingMeasureMs = nowMs
                 measurePing()
             } else if (!prefs.getBoolean("show_ping", false)) {
@@ -66,39 +70,112 @@ class OverlayService : Service() {
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val view = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.WHITE)
-            setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
-            setPadding(12, 8, 12, 8)
-            setBackgroundColor(0xDD101827.toInt())
-            setOnTouchListener(object : android.view.View.OnTouchListener {
-                private var startX = 0
-                private var startY = 0
-                private var touchX = 0f
-                private var touchY = 0f
-                override fun onTouch(v: android.view.View, event: MotionEvent): Boolean {
-                    val params = v.layoutParams as WindowManager.LayoutParams
-                    when (event.action) {
-                        MotionEvent.ACTION_DOWN -> {
-                            startX = params.x
-                            startY = params.y
-                            touchX = event.rawX
-                            touchY = event.rawY
-                            return true
-                        }
-                        MotionEvent.ACTION_MOVE -> {
-                            params.x = startX + (event.rawX - touchX).toInt()
-                            params.y = startY + (event.rawY - touchY).toInt()
-                            windowManager.updateViewLayout(v, params)
-                            return true
-                        }
-                    }
-                    return false
-                }
-            })
+
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(12))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(0xF20B1220.toInt())
+                setStroke(dp(1), 0xFF29435A.toInt())
+            }
+            elevation = dp(8).toFloat()
+            minimumWidth = minOf(dp(220), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(180)))
         }
-        panel = view
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Arrastar painel TurboLite"
+        }
+        val mark = android.widget.ImageView(this).apply {
+            setImageResource(R.drawable.ic_turbolite)
+            scaleType = android.widget.ImageView.ScaleType.FIT_CENTER
+            contentDescription = null
+        }
+        header.addView(mark, LinearLayout.LayoutParams(dp(30), dp(30)))
+        val brand = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(8), 0, 0, 0)
+        }
+        brand.addView(TextView(this).apply {
+            text = "TurboLite"
+            textSize = 14f
+            setTextColor(0xFFF2F7FC.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        })
+        brand.addView(TextView(this).apply {
+            text = "PAINEL DE JOGO"
+            textSize = 9f
+            letterSpacing = 0.08f
+            setTextColor(0xFF7FA8BF.toInt())
+        })
+        header.addView(brand, LinearLayout.LayoutParams(0, -2, 1f))
+        val close = TextView(this).apply {
+            text = "×"
+            textSize = 25f
+            gravity = Gravity.CENTER
+            setTextColor(0xFFB8C7D8.toInt())
+            contentDescription = "Fechar painel flutuante"
+            isClickable = true
+            isFocusable = true
+            minWidth = dp(44)
+            minHeight = dp(44)
+            setOnClickListener { stopSelf() }
+            background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(0x304FC3F7),
+                GradientDrawable().apply { cornerRadius = dp(12).toFloat(); setColor(0x00000000) },
+                null
+            )
+        }
+        header.addView(close, LinearLayout.LayoutParams(dp(44), dp(44)))
+        root.addView(header, LinearLayout.LayoutParams(-1, dp(44)))
+
+        val divider = android.view.View(this).apply { setBackgroundColor(0xFF26384B.toInt()) }
+        root.addView(divider, LinearLayout.LayoutParams(-1, dp(1)).apply {
+            topMargin = dp(7)
+            bottomMargin = dp(8)
+        })
+        metricsText = TextView(this).apply {
+            textSize = 12f
+            setTextColor(0xFFDDE8F2.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setLineSpacing(dp(3).toFloat(), 1f)
+            setPadding(dp(3), 0, dp(3), 0)
+        }
+        root.addView(metricsText, LinearLayout.LayoutParams(-1, -2))
+
+        header.setOnTouchListener(object : android.view.View.OnTouchListener {
+            private var startX = 0
+            private var startY = 0
+            private var touchX = 0f
+            private var touchY = 0f
+            override fun onTouch(v: android.view.View, event: MotionEvent): Boolean {
+                val params = root.layoutParams as? WindowManager.LayoutParams ?: return false
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        startX = params.x
+                        startY = params.y
+                        touchX = event.rawX
+                        touchY = event.rawY
+                        return true
+                    }
+                    MotionEvent.ACTION_MOVE -> {
+                        val maxX = (resources.displayMetrics.widthPixels - root.width).coerceAtLeast(0)
+                        val maxY = (resources.displayMetrics.heightPixels - root.height).coerceAtLeast(0)
+                        params.x = (startX + (event.rawX - touchX).toInt()).coerceIn(0, maxX)
+                        params.y = (startY + (event.rawY - touchY).toInt()).coerceIn(0, maxY)
+                        try { windowManager.updateViewLayout(root, params) } catch (_: Exception) { return false }
+                        return true
+                    }
+                }
+                return false
+            }
+        })
+        panel = root
+
         val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
         else WindowManager.LayoutParams.TYPE_PHONE
@@ -110,16 +187,19 @@ class OverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = 20
-            y = 120
+            width = minOf(dp(280), (resources.displayMetrics.widthPixels - dp(24)).coerceAtLeast(dp(200)))
+            x = dp(12)
+            y = dp(100)
         }
         try {
-            windowManager.addView(view, params)
+            windowManager.addView(root, params)
             handler.post(refresh)
         } catch (_: Exception) {
             stopSelf()
         }
     }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private fun updateRam() {
         val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
@@ -164,78 +244,96 @@ class OverlayService : Service() {
         ShizukuCommandClient.run(this, command, 8_000L)
 
     private fun measurePing() {
-        worker.execute {
-            pingText = try {
-                if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                    "Ping: requer Shizuku"
-                } else {
-                    val (exitCode, output) = runShell("ping -c 1 -W 1 1.1.1.1")
-                    val match = Regex("time[=<]([0-9.]+)").find(output)
-                    if (exitCode == 0 && match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
+        if (pingMeasureBusy) return
+        pingMeasureBusy = true
+        try {
+            worker.execute {
+                try {
+                    pingText = try {
+                        if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                            "Ping: requer Shizuku"
+                        } else {
+                            val (exitCode, output) = runShell("ping -c 1 -W 1 1.1.1.1")
+                            val match = Regex("time[=<]([0-9.]+)").find(output)
+                            if (exitCode == 0 && match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
+                        }
+                    } catch (_: Exception) {
+                        "Ping: indisponível"
+                    }
+                } finally {
+                    pingMeasureBusy = false
                 }
-            } catch (_: Exception) {
-                "Ping: indisponível"
+                handler.post { renderMetrics() }
             }
-            handler.post { panel?.text = buildText() }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            pingMeasureBusy = false
         }
     }
 
     private fun measureDeviceStats() {
-        worker.execute {
-            val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
-            val hasShizuku = try {
-                Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
-            } catch (_: Exception) { false }
-            try {
-                if (prefs.getBoolean("show_cpu", false)) {
-                    val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
-                    val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
-                    if (values.size >= 4) {
-                        val idle = values[3] + (values.getOrNull(4) ?: 0L)
-                        val total = values.sum()
-                        if (previousCpuTotal > 0L && total > previousCpuTotal) {
-                            val delta = total - previousCpuTotal
-                            val usage = ((delta - (idle - previousCpuIdle)).toDouble() * 100.0 / delta)
-                                .toInt().coerceIn(0, 100)
-                            cpuText = "CPU: $usage%"
-                        } else {
-                            cpuText = "CPU: calculando…"
+        if (statsMeasureBusy) return
+        statsMeasureBusy = true
+        try {
+            worker.execute {
+                val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+                val hasShizuku = try {
+                    Shizuku.pingBinder() && Shizuku.checkSelfPermission() == android.content.pm.PackageManager.PERMISSION_GRANTED
+                } catch (_: Exception) { false }
+                try {
+                    if (prefs.getBoolean("show_cpu", false)) {
+                        val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
+                        val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+                        if (values.size >= 4) {
+                            val idle = values[3] + (values.getOrNull(4) ?: 0L)
+                            val total = values.sum()
+                            if (previousCpuTotal > 0L && total > previousCpuTotal) {
+                                val delta = total - previousCpuTotal
+                                val usage = ((delta - (idle - previousCpuIdle)).toDouble() * 100.0 / delta)
+                                    .toInt().coerceIn(0, 100)
+                                cpuText = "CPU: $usage%"
+                            } else {
+                                cpuText = "CPU: calculando…"
+                            }
+                            previousCpuTotal = total
+                            previousCpuIdle = idle
                         }
-                        previousCpuTotal = total
-                        previousCpuIdle = idle
                     }
-                }
 
-                if (prefs.getBoolean("show_temp", false)) {
-                    var temperature: Float? = null
-                    if (hasShizuku) {
-                        val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
-                        val (tempExitCode, rawTemp) = runShell(tempCmd)
-                        temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw ->
-                            when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null }
-                        } else null
+                    if (prefs.getBoolean("show_temp", false)) {
+                        var temperature: Float? = null
+                        if (hasShizuku) {
+                            val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
+                            val (tempExitCode, rawTemp) = runShell(tempCmd)
+                            temperature = if (tempExitCode == 0) rawTemp.toFloatOrNull()?.let { raw ->
+                                when { raw >= 1000f -> raw / 1000f; raw >= 100f -> raw / 10f; raw in 0f..120f -> raw; else -> null }
+                            } else null
+                        }
+                        if (temperature == null) {
+                            val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                            val tenths = battery?.getIntExtra("temperature", -1) ?: -1
+                            if (tenths > 0) temperature = tenths / 10f
+                        }
+                        tempText = if (temperature != null && temperature in 0f..120f) {
+                            "Temp: ${String.format(java.util.Locale.US, "%.1f", temperature)}°C (bateria/sensor)"
+                        } else {
+                            "Temp: indisponível"
+                        }
                     }
-                    if (temperature == null) {
-                        val battery = registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-                        val tenths = battery?.getIntExtra("temperature", -1) ?: -1
-                        if (tenths > 0) temperature = tenths / 10f
-                    }
-                    tempText = if (temperature != null && temperature in 0f..120f) {
-                        "Temp: ${String.format(java.util.Locale.US, "%.1f", temperature)}°C (bateria/sensor)"
-                    } else {
-                        "Temp: indisponível"
-                    }
-                }
 
-                if (prefs.getBoolean("show_fps", true)) {
-                    fpsText = if (hasShizuku) measureSurfaceFlingerFps() else "FPS: requer Shizuku"
+                    if (prefs.getBoolean("show_fps", false)) {
+                        fpsText = if (hasShizuku) measureSurfaceFlingerFps() else "FPS: requer Shizuku"
+                    }
+                } catch (_: Exception) {
+                    if (prefs.getBoolean("show_cpu", false)) cpuText = "CPU: indisponível"
+                    if (prefs.getBoolean("show_temp", false)) tempText = "Temp: indisponível"
+                    if (prefs.getBoolean("show_fps", false)) fpsText = "FPS: indisponível"
+                } finally {
+                    statsMeasureBusy = false
                 }
-            } catch (_: Exception) {
-                if (prefs.getBoolean("show_cpu", false)) cpuText = "CPU: indisponível"
-                if (prefs.getBoolean("show_temp", false)) tempText = "Temp: indisponível"
-                if (prefs.getBoolean("show_fps", true)) fpsText = "FPS: indisponível"
+                handler.post { renderMetrics() }
             }
-            handler.post { panel?.text = buildText() }
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            statsMeasureBusy = false
         }
     }
 
@@ -272,13 +370,18 @@ class OverlayService : Service() {
     private fun buildText(): String {
         val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
         val lines = mutableListOf<String>()
-        if (prefs.getBoolean("show_fps", true)) lines.add(fpsText)
+        if (prefs.getBoolean("show_fps", false)) lines.add(fpsText)
         if (prefs.getBoolean("show_ram", true)) lines.add("RAM: $ramText")
         if (prefs.getBoolean("show_network", true)) lines.add(networkText)
         if (prefs.getBoolean("show_ping", false)) lines.add(pingText)
         if (prefs.getBoolean("show_cpu", false)) lines.add(cpuText)
         if (prefs.getBoolean("show_temp", false)) lines.add(tempText)
-        return (lines.ifEmpty { listOf("TurboLite • sem métricas") }).joinToString("\n")
+        return (lines.ifEmpty { listOf("Ative as métricas desejadas nas configurações.") }).joinToString("\n")
+    }
+
+    private fun renderMetrics() {
+        val text = metricsText ?: return
+        text.text = buildText()
     }
 
     override fun onDestroy() {
