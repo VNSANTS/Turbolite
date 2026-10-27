@@ -153,12 +153,30 @@ class OverlayService : Service() {
                         previousCpuTotal = total
                         previousCpuIdle = idle
                     }
-                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \$f 2>/dev/null; done | awk '\$1 ~ /^[0-9]+$/ && \$1 > 1000 { printf \"%.0f\\n\", \$1; exit }'"
+                    val tempCmd = "for f in /sys/class/thermal/thermal_zone*/temp; do cat \\$f 2>/dev/null; done | awk '\\$1 ~ /^[0-9]+(\\.[0-9]+)?$/ { v=\\$1+0; if (v>max) max=v } END { if (max>0) printf \"%.1f\\n\", max }'"
                     val tp = Shizuku.newProcess(arrayOf("sh", "-c", tempCmd), null, null)
                     val rawTemp = tp.inputStream.bufferedReader().use { it.readText().trim() }
                     tp.waitFor()
-                    val milli = rawTemp.toIntOrNull()
-                    tempText = if (milli != null) "Temp: ${"%.1f".format(java.util.Locale.US, milli / 1000.0)}°C" else "Temp: indisponível"
+                    var temperature = rawTemp.toFloatOrNull()?.let { raw ->
+                        when {
+                            raw >= 1000f -> raw / 1000f
+                            raw >= 100f -> raw / 10f
+                            raw in 0.0f..120.0f -> raw
+                            else -> null
+                        }
+                    }
+                    if (temperature == null) {
+                        val battery = Shizuku.newProcess(arrayOf("sh", "-c", "dumpsys battery"), null, null)
+                        val batteryDump = battery.inputStream.bufferedReader().use { it.readText() }
+                        battery.waitFor()
+                        temperature = Regex("(?m)^\\s*temperature:\\s*(\\d+)")
+                            .find(batteryDump)?.groupValues?.get(1)?.toFloatOrNull()?.let { it / 10f }
+                    }
+                    tempText = if (temperature != null && temperature in 0f..120f) {
+                        "Temp: ${"%.1f".format(java.util.Locale.US, temperature)}°C"
+                    } else {
+                        "Temp: indisponível (XOS bloqueou sensores)"
+                    }
                     fpsText = measureSurfaceFlingerFps()
                 }
             } catch (_: Exception) {
