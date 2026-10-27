@@ -118,9 +118,10 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = "⚡ TurboLite"
-            textSize = 30f
+            textSize = 32f
             setTextColor(0xFFFFFFFF.toInt())
             typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = -0.02f
         }
         root.addView(title)
 
@@ -159,6 +160,13 @@ class MainActivity : Activity() {
             setTextColor(0xFFE2E8F0.toInt())
             setPadding(0, dp(12), 0, dp(18))
         }
+        status.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(14).toFloat()
+            setColor(0xFF121D30.toInt())
+            setStroke(dp(1), 0xFF263B57.toInt())
+        }
+        status.setPadding(dp(14), dp(12), dp(14), dp(12))
         root.addView(status)
 
         actionButton = Button(this).apply {
@@ -197,7 +205,7 @@ class MainActivity : Activity() {
         root.addView(gameSection)
 
         val dpiTitle = TextView(this).apply {
-            text = "\\nDPI / DENSIDADE PARA JOGOS"
+            text = "\nDPI / DENSIDADE PARA JOGOS"
             textSize = 18f
             setTextColor(0xFFFFFFFF.toInt())
             typeface = Typeface.DEFAULT_BOLD
