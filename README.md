@@ -2,11 +2,27 @@
 
 Aplicativo Android experimental para solicitar a parada forçada de aplicativos instalados pelo usuário, sem root, usando Shizuku com privilégios ADB.
 
+## Funções atuais
+- **Fechar outros apps:** solicita force-stop dos apps de usuário selecionados, preservando o TurboLite e o app escolhido.
+- **Modo desempenho reversível:** salva os valores atuais das três escalas de animação do Android e altera para 0,5x.
+- **Restaurar configurações originais:** recupera os valores salvos das animações. Não restaura apps que foram fechados.
+- **Sem limpeza destrutiva:** não apaga cache, dados ou logins.
+
+## Próximas funções possíveis
+1. Perfis salvos: Normal, Jogo e Economia, sempre com opção de voltar.
+2. Lista de exclusão para apps que não devem ser fechados (mensagens, música, VPN, relógio).
+3. Prévia/relatório dos apps que serão fechados antes de confirmar.
+4. Indicadores de bateria, RAM disponível e armazenamento, apenas leitura.
+5. Atalhos para abrir as configurações nativas de bateria, tela e modo jogo da Infinix.
+6. Histórico das ações e botão para repetir a última configuração.
+7. Teste de desempenho antes/depois, sem prometer ganho de FPS.
+8. Ajuste de taxa de atualização somente se o aparelho e a versão do Android permitirem, guardando o valor original.
+
 ## Limites da beta
 - Fecha apps de usuário que aparecem no launcher, exceto o TurboLite e o app escolhido na lista.
 - Não tenta parar pacotes de sistema.
 - Não limpa cache individual. Não use `pm clear`: ele apaga dados e logins.
-- Não ativa automaticamente o modo gamer da Infinix.
+- O modo de animação 0,5x melhora a rapidez visual das transições, mas não aumenta diretamente o FPS nem a potência do processador.\n- Não ativa automaticamente o modo gamer da Infinix.
 - O Android pode reiniciar apps e serviços. Fechar apps pode interromper downloads, música, VPN, alarmes de terceiros ou notificações.
 - Esta é uma beta; confira o resultado no aparelho.
 
