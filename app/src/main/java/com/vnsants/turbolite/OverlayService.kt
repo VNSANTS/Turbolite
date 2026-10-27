@@ -17,6 +17,7 @@ import android.view.WindowManager
 import android.widget.TextView
 import java.net.InetAddress
 import java.util.concurrent.Executors
+import rikka.shizuku.Shizuku
 
 class OverlayService : Service() {
     private lateinit var windowManager: WindowManager
@@ -104,11 +105,16 @@ class OverlayService : Service() {
 
     private fun measurePing() {
         worker.execute {
-            val start = System.nanoTime()
             pingText = try {
-                if (InetAddress.getByName("1.1.1.1").isReachable(900)) {
-                    "Ping: ${(System.nanoTime() - start) / 1_000_000} ms"
-                } else "Ping: sem resposta"
+                if (!Shizuku.pingBinder() || Shizuku.checkSelfPermission() != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                    "Ping: requer Shizuku"
+                } else {
+                    val process = Shizuku.newProcess(arrayOf("sh", "-c", "ping -c 1 -W 1 1.1.1.1"), null, null)
+                    val output = process.inputStream.bufferedReader().use { it.readText() }
+                    process.waitFor()
+                    val match = Regex("time[=<]([0-9.]+)").find(output)
+                    if (match != null) "Ping: ${match.groupValues[1]} ms" else "Ping: sem resposta"
+                }
             } catch (_: Exception) {
                 "Ping: indisponível"
             }
