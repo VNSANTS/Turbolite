@@ -320,6 +320,18 @@ class MainActivity : Activity() {
             setOnClickListener { applyUsageProfile("cooling") }
         }
         root.addView(coolingButton, LinearLayout.LayoutParams(-1, dp(52)))
+        val hardModeButton = Button(this).apply {
+            text = "☠ MODO HARD • ECONOMIA EXTREMA"
+            setOnClickListener {
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Ativar economia extrema?")
+                    .setMessage("O TurboLite vai tentar manter apenas o app selecionado, encerrar outros apps de usuário, ativar economia do Android, solicitar 60 Hz, reduzir brilho e encurtar o tempo de tela. Notificações e tarefas em segundo plano podem parar. Apps do sistema não podem ser totalmente bloqueados sem root.")
+                    .setNegativeButton("Cancelar", null)
+                    .setPositiveButton("ATIVAR MODO HARD") { _, _ -> applyUsageProfile("hard") }
+                    .show()
+            }
+        }
+        root.addView(hardModeButton, LinearLayout.LayoutParams(-1, dp(58)))
         autoThermalCheck = CheckBox(this).apply {
             text = "AUTOMÁTICO: reduzir consumo quando esquentar"
             textSize = 14f
@@ -913,8 +925,32 @@ class MainActivity : Activity() {
                         .putString("usage_original_min", min.ifBlank { "null" })
                         .putBoolean("usage_profile_saved", true).apply()
                 }
-                val isCooling = profile == "cooling" || profile == "auto_cooling"
+                val isHard = profile == "hard"
+                val isCooling = profile == "cooling" || profile == "auto_cooling" || isHard
                 val isEfficiency = profile == "efficiency" || isCooling
+                if (isHard) {
+                    val extraSettings = listOf(
+                        "system:screen_brightness",
+                        "system:screen_off_timeout",
+                        "system:haptic_feedback_enabled",
+                        "global:window_animation_scale",
+                        "global:transition_animation_scale",
+                        "global:animator_duration_scale"
+                    )
+                    val editor = prefs.edit()
+                    for (item in extraSettings) {
+                        val parts = item.split(":")
+                        val value = runShell("settings get ${parts[0]} ${parts[1]}").second.trim()
+                        editor.putString("hard_original_${parts[0]}_${parts[1]}", value.ifBlank { "null" })
+                    }
+                    editor.apply()
+                    runShell("settings put system screen_brightness 20")
+                    runShell("settings put system screen_off_timeout 15000")
+                    runShell("settings put system haptic_feedback_enabled 0")
+                    runShell("settings put global window_animation_scale 0")
+                    runShell("settings put global transition_animation_scale 0")
+                    runShell("settings put global animator_duration_scale 0")
+                }
                 val lowPowerResult = runShell("settings put global low_power " + if (isEfficiency) "1" else "0")
                 if (lowPowerResult.first != 0) throw IllegalStateException("Não foi possível alterar economia do Android")
                 runShell("settings put system peak_refresh_rate 60.0")
@@ -951,6 +987,7 @@ class MainActivity : Activity() {
                     status.text = when (profile) {
                         "streaming" -> "Streaming ativado: equilíbrio, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage. A XOS pode ignorar a preferência de Hz."
                         "efficiency" -> "Eficiência ativada: economia de bateria, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage."
+                        "hard" -> "MODO HARD ativado. Mantido: $keepPackage; $stopped apps de usuário encerrados. Economia do Android ligada, brilho reduzido, tela apaga em 15 s e animações/desbloqueios táteis reduzidos. CPU limitada: $cpuPoliciesChanged políticas. Apps do sistema podem continuar ativos."
                         "auto_cooling" -> "Resfriamento automático ativado sem fechar apps: economia máxima, 60 Hz solicitado. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite."
                         else -> "Resfriamento solicitado: economia máxima, 60 Hz e $stopped apps encerrados. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite; apague a tela e pare de usar enquanto esfria."
                     }
@@ -1015,6 +1052,24 @@ class MainActivity : Activity() {
                         val safe = old.trim().replace(Regex("[^0-9.]"), "")
                         if (safe.isNotBlank()) runShell("settings put system $setting $safe")
                     }
+                }
+                val hardSettings = listOf(
+                    "system:screen_brightness",
+                    "system:screen_off_timeout",
+                    "system:haptic_feedback_enabled",
+                    "global:window_animation_scale",
+                    "global:transition_animation_scale",
+                    "global:animator_duration_scale"
+                )
+                for (item in hardSettings) {
+                    val parts = item.split(":")
+                    val key = "hard_original_${parts[0]}_${parts[1]}"
+                    val old = prefs.getString(key, null) ?: continue
+                    if (old == "null") runShell("settings delete ${parts[0]} ${parts[1]}")
+                    else if (old.matches(Regex("[0-9]+(\\.[0-9]+)?"))) {
+                        runShell("settings put ${parts[0]} ${parts[1]} $old")
+                    }
+                    prefs.edit().remove(key).apply()
                 }
                 val count = prefs.getInt("usage_cpu_policy_count", 0)
                 var cpuRestored = 0
