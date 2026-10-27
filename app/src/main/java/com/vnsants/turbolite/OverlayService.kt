@@ -335,21 +335,27 @@ class OverlayService : Service() {
                 } catch (_: Exception) { false }
                 try {
                     if (prefs.getBoolean("show_cpu", false)) {
-                        val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
-                        val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
-                        if (values.size >= 4) {
-                            val idle = values[3] + (values.getOrNull(4) ?: 0L)
-                            val total = values.sum()
-                            if (previousCpuTotal > 0L && total > previousCpuTotal) {
-                                val delta = total - previousCpuTotal
-                                val usage = ((delta - (idle - previousCpuIdle)).toDouble() * 100.0 / delta)
-                                    .toInt().coerceIn(0, 100)
-                                cpuText = "CPU: $usage%"
-                            } else {
-                                cpuText = "CPU: calculando…"
-                            }
-                            previousCpuTotal = total
-                            previousCpuIdle = idle
+                        try {
+                            val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
+                            val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+                            if (values.size >= 4) {
+                                val idle = values[3] + (values.getOrNull(4) ?: 0L)
+                                val total = values.sum()
+                                if (previousCpuTotal > 0L && total > previousCpuTotal) {
+                                    val delta = total - previousCpuTotal
+                                    val usage = ((delta - (idle - previousCpuIdle)).toDouble() * 100.0 / delta).toInt().coerceIn(0, 100)
+                                    cpuText = "CPU: $usage%"
+                                } else cpuText = "CPU: calculando…"
+                                previousCpuTotal = total
+                                previousCpuIdle = idle
+                            } else cpuText = "CPU: formato não reconhecido"
+                        } catch (_: Exception) {
+                            cpuText = if (hasShizuku) {
+                                try {
+                                    val (code, output) = runShell("top -b -n 1 | head -n 5")
+                                    if (code == 0) "CPU: ${output.lineSequence().firstOrNull { it.contains("%") }?.trim() ?: "leitura limitada"}" else "CPU: acesso restrito"
+                                } catch (_: Exception) { "CPU: acesso restrito" }
+                            } else "CPU: requer acesso adicional"
                         }
                     }
 
