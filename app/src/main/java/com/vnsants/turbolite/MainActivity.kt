@@ -271,6 +271,12 @@ class MainActivity : Activity() {
                 }
                 val actions = p.optJSONArray("actions") ?: JSONArray()
                 val selectedActions = (0 until actions.length()).map { actions.optString(it) }.toSet()
+                val usageProfiles = selectedActions.intersect(setOf("streaming", "efficiency", "cooling", "hard"))
+                if (usageProfiles.size > 1) {
+                    status.text = "Este perfil combina modos de energia incompatíveis."
+                    Toast.makeText(this@MainActivity, "Escolha apenas um perfil integrado: streaming, eficiência, resfriamento ou HARD. Combine-o com ações individuais, se forem compatíveis.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
                 val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
                 if ("hard" in selectedActions && keepPackage == packageName) {
                     status.text = "Selecione primeiro o app que deve continuar aberto para usar HARD."
@@ -348,9 +354,9 @@ class MainActivity : Activity() {
                     previousCpuIdle = idle
                 }
             } catch (_: Exception) { }
-            card.text = "STATUS DE DESEMPENHO  •  AO VIVO\\n" +
-                "CPU: $cpuText     RAM: $usedMb / $totalMb MB\\n" +
-                "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\\n" +
+            card.text = "STATUS DE DESEMPENHO  •  AO VIVO\n" +
+                "CPU: $cpuText     RAM: $usedMb / $totalMb MB\n" +
+                "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\n" +
                 "Temperatura da bateria: $temp"
         } catch (e: Exception) {
             card.text = "STATUS DE DESEMPENHO\\nNão foi possível ler todas as métricas neste Android."
