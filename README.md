@@ -4,7 +4,7 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 
 ## Interface e identidade visual
 - Interface escura com identidade gamer profissional, azul profundo e ciano, inspirada na opção 3 aprovada para a marca.
-- Tela inicial reorganizada com cabeçalho da marca, status do sistema, controles principais e perfis personalizados depois das ações rápidas.
+- Navegação inferior com cinco áreas: Início, Perfis, Monitor, Configurações e Jogos. A tela inicial reúne cabeçalho da marca, status do sistema e controles rápidos; as ferramentas de DPI/jogo, perfis personalizados, painel flutuante e ajustes de app/permissão ficam separados por área.
 - Cartão de status mostra RAM, CPU estimada, bateria e temperatura da bateria quando disponível; é atualizado manualmente pelo botão.
 - Perfis personalizados permitem nome, emoji e seleção de funções, salvando os perfis localmente no aparelho.
 
