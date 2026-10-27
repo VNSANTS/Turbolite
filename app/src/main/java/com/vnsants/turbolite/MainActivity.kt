@@ -176,7 +176,7 @@ class MainActivity : Activity() {
         buildUi()
         val overlayPrefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
         if (!overlayPrefs.contains("show_fps")) {
-            overlayPrefs.edit().putBoolean("show_fps", true).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
+            overlayPrefs.edit().putBoolean("show_fps", false).putBoolean("show_ram", true).putBoolean("show_ping", false).apply()
         }
         loadAppsToKeep()
         updatePermissionState()
@@ -496,12 +496,11 @@ class MainActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(18), dp(16), dp(18))
-            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(withAlpha(accentColor(), 0x34), 0xFF07111F.toInt())).apply {
-                cornerRadius = dp(24).toFloat()
-                setStroke(dp(1), withAlpha(accentColor(), 0x88))
+            background = GradientDrawable().apply {
+                setColor(0xFF101A29.toInt())
+                cornerRadius = dp(20).toFloat()
+                setStroke(dp(1), 0xFF26364A.toInt())
             }
-            elevation = dp(3).toFloat()
         }
         val brandMark = android.widget.ImageView(this).apply {
             setImageResource(com.vnsants.turbolite.R.drawable.ic_turbolite)
@@ -521,15 +520,14 @@ class MainActivity : Activity() {
         }
         brandCopy.addView(title)
         val subtitle = TextView(this).apply {
-            text = "MAIS CONTROLE. MAIS DESEMPENHO."
-            textSize = 10f
-            letterSpacing = 0.07f
-            setTextColor(accentColor())
+            text = "Controle do sistema e dos seus jogos"
+            textSize = 12f
+            setTextColor(0xFFB9C9DA.toInt())
             setPadding(0, dp(4), 0, dp(5))
         }
         brandCopy.addView(subtitle)
         val version = TextView(this).apply {
-            text = "ANDROID 14  •  SHIZUKU  •  SEM ROOT"
+            text = "Android 14 • Shizuku • sem root"
             textSize = 10f
             setTextColor(0xFF9CAAC4.toInt())
         }
@@ -562,7 +560,7 @@ class MainActivity : Activity() {
             text = "Verificando Shizuku…"
             textSize = 15f
             setTextColor(0xFFE2E8F0.toInt())
-            setPadding(0, dp(12), 0, dp(18))
+            accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
         }
         status.background = GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
@@ -591,7 +589,8 @@ class MainActivity : Activity() {
             elevation = dp(2).toFloat()
             setLineSpacing(dp(3).toFloat(), 1f)
         }
-        root.addView(performanceCard, LinearLayout.LayoutParams(-1, dp(160)).apply {
+        performanceCard.minimumHeight = dp(160)
+        root.addView(performanceCard, LinearLayout.LayoutParams(-1, -2).apply {
             topMargin = dp(12)
             bottomMargin = dp(8)
         })
@@ -600,10 +599,10 @@ class MainActivity : Activity() {
             setTextColor(0xFFEAF7FF.toInt())
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(16), dp(12), dp(16), dp(12))
-            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT,
-                intArrayOf(withAlpha(accentColor(), 0x32), 0xFF0D1B2B.toInt())).apply {
-                cornerRadius = dp(18).toFloat()
-                setStroke(dp(1), withAlpha(accentColor(), 0x75))
+            background = GradientDrawable().apply {
+                setColor(0xFF101A29.toInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), 0xFF26364A.toInt())
             }
         }
         root.addView(currentModeCard, LinearLayout.LayoutParams(-1, dp(74)).apply { bottomMargin = dp(10) })
@@ -913,7 +912,7 @@ class MainActivity : Activity() {
         addMetricToggle("Mostrar RAM", "show_ram", true)
         addMetricToggle("Mostrar ping (teste para 1.1.1.1)", "show_ping", false)
         addMetricToggle("Mostrar tráfego de rede do aparelho", "show_network", true)
-        addMetricToggle("Mostrar FPS (estimativa; depende do Android)", "show_fps", true)
+        addMetricToggle("Mostrar FPS (estimativa; depende do Android)", "show_fps", false)
         addMetricToggle("Mostrar uso de CPU (Shizuku)", "show_cpu", false)
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
 
@@ -947,7 +946,8 @@ class MainActivity : Activity() {
             }
             elevation = dp(2).toFloat()
         }
-        root.addView(monitorGauge, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(12) })
+        monitorGauge.minimumHeight = dp(130)
+        root.addView(monitorGauge, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
 
         monitorMetrics = TextView(this).apply {
             text = "◉ CPU   —\n▦ RAM   —\n▣ BATERIA   —\n◷ FPS   Não disponível pelo Android comum"
@@ -962,7 +962,8 @@ class MainActivity : Activity() {
             elevation = dp(1).toFloat()
             setLineSpacing(dp(3).toFloat(), 1f)
         }
-        root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
+        monitorMetrics.minimumHeight = dp(130)
+        root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         val chartTitle = TextView(this).apply {
             text = "HISTÓRICO AO VIVO • ATÉ 5 MIN"
             textSize = 12f
@@ -1139,13 +1140,14 @@ class MainActivity : Activity() {
             elevation = dp(5).toFloat()
         }
         val navItems = listOf(
-            Triple("⌂", "Início", "home"),
-            Triple("◉", "Perfis", "profiles"),
-            Triple("◷", "Monitor", "monitor"),
-            Triple("✦", "Jogos", "games"),
-            Triple("☷", "Mais", "settings")
+            "Início" to "home",
+            "Perfis" to "profiles",
+            "Monitor" to "monitor",
+            "Jogos" to "games",
+            "Mais" to "settings"
         )
         val navButtons = mutableMapOf<String, TextView>()
+        val navLabels = navItems.associate { it.second to it.first }
         fun selectTab(tab: String) {
             selectedTabKey = tab
             getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit().putString("selected_tab", tab).apply()
@@ -1157,12 +1159,12 @@ class MainActivity : Activity() {
                 val selected = key == tab
                 button.setTextColor(if (selected) accentColor() else 0xFF8EA3BB.toInt())
                 button.isSelected = selected
+                button.contentDescription = "${navLabels[key] ?: key}, ${if (selected) "selecionada" else "guia"}"
                 button.background = android.graphics.drawable.RippleDrawable(
                     android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x48)),
                     GradientDrawable().apply {
-                        cornerRadius = dp(15).toFloat()
-                        setColor(if (selected) withAlpha(accentColor(), 0x24) else 0x00000000)
-                        if (selected) setStroke(dp(1), withAlpha(accentColor(), 0xA0))
+                        cornerRadius = dp(14).toFloat()
+                        setColor(if (selected) withAlpha(accentColor(), 0x20) else 0x00000000)
                     },
                     null
                 )
@@ -1174,14 +1176,14 @@ class MainActivity : Activity() {
                 monitorHandler.postDelayed(monitorUpdater, 5_000L)
             }
         }
-        for ((symbol, label, tab) in navItems) {
+        for ((label, tab) in navItems) {
             val button = TextView(this).apply {
-                text = "$symbol\n$label"
+                text = label
                 gravity = Gravity.CENTER
-                textSize = 11f
-                typeface = Typeface.DEFAULT_BOLD
+                textSize = 12f
+                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
                 setTextColor(0xFF8EA3BB.toInt())
-                setPadding(dp(3), dp(7), dp(3), dp(7))
+                setPadding(dp(3), dp(5), dp(3), dp(5))
                 isClickable = true
                 isFocusable = true
                 contentDescription = label
@@ -1313,35 +1315,39 @@ class MainActivity : Activity() {
 
     private fun styleControls(view: android.view.View) {
         if (view is Button) {
-            val label = view.text.toString().uppercase(java.util.Locale.ROOT)
+            val originalLabel = view.text.toString()
+            val label = originalLabel.uppercase(java.util.Locale.ROOT)
+            val locale = java.util.Locale.forLanguageTag("pt-BR")
+            view.text = originalLabel.split("\n").joinToString("\n") { line ->
+                if (line.isNotBlank() && line == line.uppercase(java.util.Locale.ROOT)) {
+                    line.lowercase(locale)
+                        .replace(Regex("\\bdpi\\b"), "DPI")
+                        .replace(Regex("\\bfps\\b"), "FPS")
+                        .replace(Regex("\\bcpu\\b"), "CPU")
+                        .replace(Regex("\\bram\\b"), "RAM")
+                        .replace(Regex("\\bhz\\b"), "Hz")
+                        .replace(Regex("\\bshizuku\\b", RegexOption.IGNORE_CASE), "Shizuku")
+                        .replaceFirstChar { if (it.isLowerCase()) it.titlecase(locale) else it.toString() }
+                } else line
+            }
             val primary = label.contains("FECHAR OS OUTROS APPS") ||
                 label.contains("APLICAR PERFIL SELECIONADO") ||
                 label.contains("ATIVAR MODO HARD") ||
                 label.contains("SALVAR / ATUALIZAR PERFIL")
             val caution = label.contains("HARD") || label.contains("EXCLUIR")
-            val shape = GradientDrawable(
-                GradientDrawable.Orientation.LEFT_RIGHT,
-                if (primary) intArrayOf(lighten(accentColor(), 0.12f), accentColor())
-                else intArrayOf(0xFF17263A.toInt(), 0xFF101A2A.toInt())
-            ).apply {
-                cornerRadius = dp(16).toFloat()
-                setStroke(dp(1), if (primary) withAlpha(accentColor(), 0xD0) else 0xFF2A3D57.toInt())
+            val shape = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(if (primary) accentColor() else 0xFF172233.toInt())
+                setStroke(dp(1), if (primary) accentColor() else 0xFF2A3A50.toInt())
             }
             view.background = android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(if (primary) 0x44FFFFFF else withAlpha(accentColor(), 0x35)),
                 shape,
                 shape.constantState?.newDrawable()?.mutate()
             )
-            view.elevation = if (primary) dp(2).toFloat() else 0f
+            view.elevation = 0f
             view.minimumHeight = maxOf(view.minimumHeight, dp(48))
-            val actionColor = when {
-                label.contains("STREAMING") -> 0xFF65D2FF.toInt()
-                label.contains("EFICIÊNCIA") -> 0xFF69E5B0.toInt()
-                label.contains("RESFRIAMENTO") -> 0xFF83C9FF.toInt()
-                label.contains("MODO JOGO") -> 0xFFFF8CA9.toInt()
-                else -> 0xFFEAF0F8.toInt()
-            }
-            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else actionColor)
+            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAF0F8.toInt())
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
             view.isAllCaps = false
@@ -1356,21 +1362,34 @@ class MainActivity : Activity() {
         } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
                 "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "PERFIS DE DESEMPENHO",
                 "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO", "MONITORAMENTO",
-                "CONFIGURAÇÕES", "JOGOS E INTERFACE", "AÇÕES RÁPIDAS", "HISTÓRICO AO VIVO • ATÉ 5 MIN"
+                "CONFIGURAÇÕES", "AÇÕES RÁPIDAS", "HISTÓRICO AO VIVO • ATÉ 5 MIN",
+                "DPI / DENSIDADE PARA JOGOS", "ESCOLHA UM PERFIL PRONTO", "PAINEL FLUTUANTE"
             )) {
-            view.background = GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
-                setColor(0xFF101A2A.toInt())
-                setStroke(dp(1), withAlpha(accentColor(), 0x35))
+            val heading = view.text.toString().uppercase(java.util.Locale.ROOT)
+            view.text = when (heading) {
+                "CONTROLE RÁPIDO" -> "Controle rápido"
+                "JOGOS E INTERFACE" -> "Jogos e interface"
+                "PERFIS DE DESEMPENHO" -> "Perfis de energia"
+                "PERFIS PERSONALIZADOS" -> "Seus perfis"
+                "PAINEL E MONITORAMENTO" -> "Painel e monitoramento"
+                "MONITORAMENTO" -> "Monitoramento"
+                "CONFIGURAÇÕES" -> "Configurações"
+                "AÇÕES RÁPIDAS" -> "Ações rápidas"
+                "DPI / DENSIDADE PARA JOGOS" -> "DPI para jogos"
+                "ESCOLHA UM PERFIL PRONTO" -> "Perfis prontos"
+                "PAINEL FLUTUANTE" -> "Painel flutuante"
+                else -> "Histórico • até 5 min"
             }
-            view.setPadding(dp(12), dp(12), dp(12), dp(12))
-            view.textSize = 12f
-            view.letterSpacing = 0.08f
-            view.typeface = Typeface.create("sans-serif", Typeface.BOLD)
+            view.background = null
+            view.setPadding(0, dp(12), 0, dp(5))
+            view.textSize = 14f
+            view.letterSpacing = 0f
+            view.setTextColor(0xFFB8C4D9.toInt())
+            view.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             val params = view.layoutParams
             if (params is LinearLayout.LayoutParams) {
-                params.topMargin = dp(14)
-                params.bottomMargin = dp(8)
+                params.topMargin = dp(10)
+                params.bottomMargin = dp(4)
                 view.layoutParams = params
             }
         } else if (view is CheckBox) {
