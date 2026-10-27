@@ -131,6 +131,47 @@ class MainActivity : Activity() {
         updatePermissionState()
     }
 
+    private var previousCpuTotal = 0L
+    private var previousCpuIdle = 0L
+
+    private fun updatePerformanceCard(card: TextView) {
+        try {
+            val manager = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
+            val memory = android.app.ActivityManager.MemoryInfo()
+            manager.getMemoryInfo(memory)
+            val totalMb = memory.totalMem / (1024L * 1024L)
+            val freeMb = memory.availMem / (1024L * 1024L)
+            val usedMb = (totalMb - freeMb).coerceAtLeast(0L)
+            val batteryIntent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = batteryIntent?.getIntExtra("level", -1) ?: -1
+            val scale = batteryIntent?.getIntExtra("scale", 100) ?: 100
+            val batteryPct = if (level >= 0 && scale > 0) (level * 100 / scale) else -1
+            val tempTenths = batteryIntent?.getIntExtra("temperature", -1) ?: -1
+            val temp = if (tempTenths >= 0) String.format(java.util.Locale.US, "%.1f°C", tempTenths / 10f) else "indisponível"
+            var cpuText = "indisponível"
+            try {
+                val line = java.io.File("/proc/stat").bufferedReader().use { it.readLine() ?: "" }
+                val values = line.trim().split(Regex("\\s+")).drop(1).mapNotNull { it.toLongOrNull() }
+                if (values.size >= 4) {
+                    val idle = values[3] + (values.getOrNull(4) ?: 0L)
+                    val total = values.sum()
+                    if (previousCpuTotal > 0L && total > previousCpuTotal) {
+                        val usage = (((total - previousCpuTotal - (idle - previousCpuIdle)).toDouble() * 100.0) / (total - previousCpuTotal)).toInt().coerceIn(0, 100)
+                        cpuText = "$usage%"
+                    } else cpuText = "calculando…"
+                    previousCpuTotal = total
+                    previousCpuIdle = idle
+                }
+            } catch (_: Exception) { }
+            card.text = "STATUS DE DESEMPENHO  •  AO VIVO\\n" +
+                "CPU: $cpuText     RAM: $usedMb / $totalMb MB\\n" +
+                "RAM livre: $freeMb MB     Bateria: " + (if (batteryPct >= 0) "$batteryPct%" else "indisponível") + "\\n" +
+                "Temperatura da bateria: $temp"
+        } catch (e: Exception) {
+            card.text = "STATUS DE DESEMPENHO\\nNão foi possível ler todas as métricas neste Android."
+        }
+    }
+
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -190,6 +231,31 @@ class MainActivity : Activity() {
         }
         status.setPadding(dp(14), dp(12), dp(14), dp(12))
         root.addView(status)
+
+        val performanceCard = TextView(this).apply {
+            text = "STATUS DE DESEMPENHO\\nLendo dados do aparelho…"
+            textSize = 14f
+            setTextColor(0xFFE2E8F0.toInt())
+            typeface = Typeface.MONOSPACE
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(18).toFloat()
+                setColor(0xFF101B2D.toInt())
+                setStroke(dp(1), 0xFF00AFCB.toInt())
+            }
+        }
+        root.addView(performanceCard, LinearLayout.LayoutParams(-1, dp(132)).apply {
+            topMargin = dp(12)
+            bottomMargin = dp(8)
+        })
+
+        val refreshStatusButton = Button(this).apply {
+            text = "ATUALIZAR STATUS DO CELULAR"
+            setOnClickListener { updatePerformanceCard(performanceCard) }
+        }
+        root.addView(refreshStatusButton, LinearLayout.LayoutParams(-1, dp(48)))
+        updatePerformanceCard(performanceCard)
 
         actionButton = Button(this).apply {
             text = "FECHAR OS OUTROS APPS"
