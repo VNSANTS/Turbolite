@@ -713,6 +713,75 @@ class MainActivity : Activity() {
         addMetricToggle("Mostrar uso de CPU (Shizuku)", "show_cpu", false)
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
 
+        val monitorHeading = TextView(this).apply {
+            text = "MONITORAMENTO"
+            textSize = 22f
+            setTextColor(0xFFF2F8FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(8), 0, dp(4))
+        }
+        root.addView(monitorHeading)
+        val monitorSubtitle = TextView(this).apply {
+            text = "Acompanhe os indicadores disponíveis no Android. Algumas métricas dependem do fabricante e do Shizuku."
+            textSize = 13f
+            setTextColor(0xFF9CAAC4.toInt())
+            setPadding(0, 0, 0, dp(14))
+        }
+        root.addView(monitorSubtitle)
+
+        val monitorGauge = TextView(this).apply {
+            text = "🌡  TEMPERATURA\nLendo sensores…"
+            textSize = 21f
+            gravity = Gravity.CENTER
+            setTextColor(0xFFEAF7FF.toInt())
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            setPadding(dp(16), dp(20), dp(16), dp(20))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(24).toFloat()
+                setColor(0xFF0B192B.toInt())
+                setStroke(dp(2), 0xFF00BFEA.toInt())
+            }
+        }
+        root.addView(monitorGauge, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(12) })
+
+        val monitorMetrics = TextView(this).apply {
+            text = "◉ CPU   —\n▦ RAM   —\n▣ BATERIA   —\n◷ FPS   Não disponível pelo Android comum"
+            textSize = 15f
+            setTextColor(0xFFE2EAF5.toInt())
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(18).toFloat()
+                setColor(0xFF0E1B2D.toInt())
+                setStroke(dp(1), 0xFF193A56.toInt())
+            }
+        }
+        root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
+
+        val monitorRefresh = Button(this).apply {
+            text = "ATUALIZAR MONITORAMENTO"
+            setOnClickListener {
+                updatePerformanceCard(performanceCard)
+                monitorMetrics.text = performanceCard.text.toString().replace("STATUS DO SISTEMA", "INDICADORES DO SISTEMA")
+                val intent = registerReceiver(null, android.content.IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+                val raw = intent?.getIntExtra("temperature", -1) ?: -1
+                monitorGauge.text = if (raw > 0) String.format(java.util.Locale.getDefault(), "🌡  TEMPERATURA\n%.1f°C\n\nTemperatura da bateria", raw / 10f)
+                    else "🌡  TEMPERATURA\nSensor de bateria indisponível"
+            }
+        }
+        root.addView(monitorRefresh, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(16) })
+
+        val monitorNote = TextView(this).apply {
+            text = "LIMITAÇÕES DO ANDROID\nCPU e FPS por aplicativo não são expostos universalmente. A temperatura da bateria não representa todos os sensores internos. O histórico contínuo depende de permissões e coleta ativa."
+            textSize = 12f
+            setTextColor(0xFF91A6BF.toInt())
+            setPadding(dp(14), dp(14), dp(14), dp(14))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(14).toFloat()
+                setColor(0xFF0B1422.toInt())
+            }
+        }
+        root.addView(monitorNote)
+
         val settingsStartIndex = root.childCount
         val settingsHeading = TextView(this).apply {
             text = "CONFIGURAÇÕES"
@@ -759,10 +828,12 @@ class MainActivity : Activity() {
 
         // Divide os elementos existentes em quatro telas sem recriar nem remover funções.
         for (index in 0 until root.childCount) {
+            val child = root.getChildAt(index)
             val tab = when {
+                child === performanceCard -> "monitor"
                 index < gamesStartIndex -> "home"
                 index < energyStartIndex -> "games"
-                index < profilesStartIndex -> "monitor"
+                index < profilesStartIndex -> "home"
                 index < toolsStartIndex -> "profiles"
                 index < settingsStartIndex -> "monitor"
                 else -> "settings"
