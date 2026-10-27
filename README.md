@@ -18,8 +18,8 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 - **Sem limpeza destrutiva:** não apaga cache, dados ou logins.
 
 ## Painel flutuante (beta experimental)
-- Janela pequena arrastável por cima de outros apps.
-- Alternância independente para RAM, ping, tráfego de rede, FPS, uso de CPU e temperatura. Métricas desligadas não iniciam suas medições.
+- HUD compacto arrastável pelo cabeçalho, com botão de fechar e layout em dp que se adapta à largura disponível.
+- Alternância independente para RAM, ping, tráfego de rede, FPS, uso de CPU e temperatura. FPS começa desativado por exigir consultas mais pesadas; métricas desligadas não iniciam suas medições.
 - RAM usa a informação de memória do Android; tráfego de rede usa contadores do sistema; ping usa um teste para 1.1.1.1 através do Shizuku, não necessariamente o servidor do jogo.
 - CPU é estimada a partir de `/proc/stat`; temperatura só aparece se o fabricante expuser uma zona térmica legível.
 - FPS tenta estimar quadros recentes via `dumpsys SurfaceFlinger`; pode ficar indisponível ou variar conforme a versão do Android/XOS e o jogo em primeiro plano.
