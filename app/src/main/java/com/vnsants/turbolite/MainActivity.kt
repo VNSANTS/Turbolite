@@ -366,8 +366,8 @@ class MainActivity : Activity() {
     private fun buildUi() {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(20))
-            setBackgroundColor(0xFF0B1020.toInt())
+            setPadding(dp(18), dp(22), dp(18), dp(24))
+            setBackgroundColor(0xFF070B16.toInt())
         }
 
         // Hero da identidade TurboLite: gamer profissional, azul profundo e ciano.
@@ -454,8 +454,9 @@ class MainActivity : Activity() {
         val performanceCard = TextView(this).apply {
             text = "STATUS DO SISTEMA\nLendo dados do aparelho…"
             textSize = 14f
-            setTextColor(0xFFE2E8F0.toInt())
-            typeface = Typeface.MONOSPACE
+            setTextColor(0xFFE2E8F0.toInt()
+            )
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(16), dp(16), dp(16), dp(16))
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
@@ -713,6 +714,21 @@ class MainActivity : Activity() {
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
 
         val settingsStartIndex = root.childCount
+        val settingsHeading = TextView(this).apply {
+            text = "CONFIGURAÇÕES"
+            textSize = 22f
+            setTextColor(0xFFF2F8FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(8), 0, dp(12))
+        }
+        root.addView(settingsHeading)
+        val settingsDescription = TextView(this).apply {
+            text = "Permissões, atualização dos aplicativos e informações importantes sobre os recursos do TurboLite."
+            textSize = 13f
+            setTextColor(0xFF9CAAC4.toInt())
+            setPadding(0, 0, 0, dp(14))
+        }
+        root.addView(settingsDescription)
         reloadButton = Button(this).apply {
             text = "ATUALIZAR LISTA / PERMISSÃO"
             setOnClickListener {
@@ -746,7 +762,7 @@ class MainActivity : Activity() {
             val tab = when {
                 index < gamesStartIndex -> "home"
                 index < energyStartIndex -> "games"
-                index < profilesStartIndex -> "home"
+                index < profilesStartIndex -> "monitor"
                 index < toolsStartIndex -> "profiles"
                 index < settingsStartIndex -> "monitor"
                 else -> "settings"
@@ -777,9 +793,9 @@ class MainActivity : Activity() {
         }
         val navItems = listOf(
             Triple("⌂", "Início", "home"),
-            Triple("◇", "Perfis", "profiles"),
+            Triple("⚙", "Perfis", "profiles"),
             Triple("◉", "Monitor", "monitor"),
-            Triple("⚙", "Config.", "settings"),
+            Triple("☷", "Config.", "settings"),
             Triple("✦", "Jogos", "games")
         )
         val navButtons = mutableMapOf<String, TextView>()
@@ -805,7 +821,12 @@ class MainActivity : Activity() {
                 gravity = Gravity.CENTER
                 textSize = 11f
                 typeface = Typeface.DEFAULT_BOLD
-                setPadding(dp(4), dp(7), dp(4), dp(7))
+                setTextColor(0xFF8EA3BB.toInt())
+                setPadding(dp(3), dp(7), dp(3), dp(7))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(13).toFloat()
+                    setColor(0x00000000)
+                }
                 setOnClickListener { selectTab(tab) }
             }
             navButtons[tab] = button
@@ -849,8 +870,32 @@ class MainActivity : Activity() {
                 params.bottomMargin = dp(7)
                 view.layoutParams = params
             }
+        } else if (view is TextView && view.text.toString().uppercase(java.util.Locale.ROOT) in setOf(
+                "CONTROLE RÁPIDO", "JOGOS E INTERFACE", "BATERIA, TEMPERATURA E MEMÓRIA",
+                "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO"
+            )) {
+            view.background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(0xFF0D1B2D.toInt())
+                setStroke(dp(1), 0xFF153A55.toInt())
+            }
+            view.setPadding(dp(12), dp(12), dp(12), dp(12))
+            val params = view.layoutParams
+            if (params is LinearLayout.LayoutParams) {
+                params.topMargin = dp(14)
+                params.bottomMargin = dp(8)
+                view.layoutParams = params
+            }
+        } else if (view is CheckBox) {
+            view.setTextColor(0xFFE2E8F0.toInt())
+            view.buttonTintList = android.content.res.ColorStateList.valueOf(0xFF00D4FF.toInt())
+            view.setPadding(dp(8), dp(7), dp(8), dp(7))
         } else if (view is Spinner) {
-            view.setBackgroundColor(0xFF17243A.toInt())
+            view.setBackground(GradientDrawable().apply {
+                cornerRadius = dp(12).toFloat()
+                setColor(0xFF121D30.toInt())
+                setStroke(dp(1), 0xFF263B57.toInt())
+            })
         } else if (view is EditText) {
             view.setTextColor(0xFFFFFFFF.toInt())
             view.setHintTextColor(0xFF8292AD.toInt())
