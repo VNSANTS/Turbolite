@@ -20,3 +20,6 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 
 ## Build automático
 O GitHub Actions compila o APK de depuração em cada push e também permite execução manual em Actions → Build TurboLite Android Beta → Run workflow. O arquivo gerado é `app/build/outputs/apk/debug/app-debug.apk` e fica disponível como artifact por 14 dias.
+
+
+Última configuração: workflow de build automático definido em `.github/workflows/build-android.yml`.
