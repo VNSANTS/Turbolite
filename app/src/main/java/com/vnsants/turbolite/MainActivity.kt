@@ -961,8 +961,8 @@ class MainActivity : Activity() {
         root.addView(monitorSubtitle)
 
         monitorGauge = TextView(this).apply {
-            text = "🌡  TEMPERATURA\nLendo sensores…"
-            textSize = 21f
+            text = "✦  VISÃO GERAL DO DISPOSITIVO\n\nBateria e temperatura\nLendo sensores…"
+            textSize = 20f
             gravity = Gravity.CENTER
             setTextColor(0xFFEAF7FF.toInt())
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -974,11 +974,11 @@ class MainActivity : Activity() {
             }
             elevation = dp(2).toFloat()
         }
-        monitorGauge.minimumHeight = dp(130)
+        monitorGauge.minimumHeight = dp(148)
         root.addView(monitorGauge, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(12) })
 
         monitorMetrics = TextView(this).apply {
-            text = "◉ CPU   —\n▦ RAM   —\n▣ BATERIA   —\n◷ FPS   Não disponível pelo Android comum"
+            text = "◉  PROCESSADOR (CPU)\nLendo utilização…\n\n▦  MEMÓRIA (RAM)\nLendo utilização…\n\n▣  BATERIA E TEMPERATURA\nLendo indicadores…\n\n⇅  REDE E DESEMPENHO\nFPS depende do Android e do Shizuku"
             textSize = 15f
             setTextColor(0xFFE2EAF5.toInt())
             setPadding(dp(16), dp(16), dp(16), dp(16))
@@ -990,7 +990,7 @@ class MainActivity : Activity() {
             elevation = dp(1).toFloat()
             setLineSpacing(dp(3).toFloat(), 1f)
         }
-        monitorMetrics.minimumHeight = dp(130)
+        monitorMetrics.minimumHeight = dp(180)
         root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         val chartTitle = TextView(this).apply {
             text = "HISTÓRICO AO VIVO • ATÉ 5 MIN"
