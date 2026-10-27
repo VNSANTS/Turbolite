@@ -896,6 +896,33 @@ class MainActivity : Activity() {
         }
         root.addView(stopOverlayButton, LinearLayout.LayoutParams(-1, dp(48)))
 
+        val appearanceButton = Button(this).apply {
+            text = "APARÊNCIA DO PAINEL"
+            setOnClickListener {
+                val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
+                val choices = arrayOf("Minimalista — só números", "Glass — painel moderno", "Clássico — compacto")
+                val keys = arrayOf("minimal", "glass", "classic")
+                val current = keys.indexOf(prefs.getString("appearance", "glass")).coerceAtLeast(0)
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Aparência do painel")
+                    .setSingleChoiceItems(choices, current) { dialog, which ->
+                        prefs.edit().putString("appearance", keys[which]).apply()
+                        dialog.dismiss()
+                        Toast.makeText(this@MainActivity, "Aparência salva. Feche e abra o painel para aplicar.", Toast.LENGTH_LONG).show()
+                    }
+                    .setNegativeButton("Cancelar", null)
+                    .show()
+            }
+        }
+        root.addView(appearanceButton, LinearLayout.LayoutParams(-1, dp(48)))
+        val resizeHint = TextView(this).apply {
+            text = "Dica: arraste o cabeçalho para mover. Arraste o canto inferior direito ou a borda direita/inferior para redimensionar."
+            textSize = 12f
+            setTextColor(0xFF9FB2C8.toInt())
+            setPadding(dp(4), dp(4), dp(4), dp(8))
+        }
+        root.addView(resizeHint)
+
         fun addMetricToggle(label: String, key: String, defaultValue: Boolean) {
             val prefs = getSharedPreferences("turbolite_overlay", MODE_PRIVATE)
             val toggle = CheckBox(this).apply {
