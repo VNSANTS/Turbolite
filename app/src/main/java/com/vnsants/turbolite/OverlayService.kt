@@ -438,7 +438,7 @@ class OverlayService : Service() {
         text.text = buildText()
         val minimal = getSharedPreferences("turbolite_overlay", MODE_PRIVATE).getString("appearance", "glass") == "minimal"
         text.gravity = if (minimal) Gravity.CENTER else Gravity.START
-        text.typeface = Typeface.create(if (minimal) "sans-serif" else "sans-serif-medium", if (minimal) Typeface.NORMAL else Typeface.MEDIUM)
+        text.typeface = Typeface.create(if (minimal) "sans-serif" else "sans-serif-medium", if (minimal) Typeface.NORMAL else Typeface.BOLD)
     }
 
     override fun onDestroy() {
