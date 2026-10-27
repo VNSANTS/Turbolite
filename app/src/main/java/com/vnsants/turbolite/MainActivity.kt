@@ -24,6 +24,8 @@ import android.widget.TextView
 import android.widget.Toast
 import rikka.shizuku.Shizuku
 import java.util.concurrent.Executors
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : Activity() {
     private val executor = Executors.newSingleThreadExecutor()
@@ -129,6 +131,189 @@ class MainActivity : Activity() {
         }
         loadAppsToKeep()
         updatePermissionState()
+    }
+
+    private val profileActions = linkedMapOf(
+        "close_apps" to "Fechar outros apps de usuário",
+        "performance" to "Ativar modo de desempenho/animações",
+        "max_refresh" to "Solicitar taxa máxima da tela",
+        "dpi" to "Aplicar DPI recomendada",
+        "game" to "Solicitar modo de jogo: performance",
+        "streaming" to "Perfil integrado: streaming/equilíbrio",
+        "efficiency" to "Perfil integrado: economia moderada",
+        "cooling" to "Perfil integrado: resfriamento",
+        "hard" to "Perfil integrado: HARD / economia extrema",
+        "clean_ram" to "Fechar apps + limpar processos em cache",
+        "thermal" to "Ativar monitor térmico automático",
+        "overlay" to "Mostrar painel flutuante"
+    )
+
+    private fun readCustomProfiles(): JSONArray {
+        val raw = getSharedPreferences("turbolite_profiles", MODE_PRIVATE).getString("profiles", "[]") ?: "[]"
+        return try { JSONArray(raw) } catch (_: Exception) { JSONArray() }
+    }
+
+    private fun addCustomProfilesSection(root: LinearLayout) {
+        val heading = TextView(this).apply {
+            text = "PERFIS PERSONALIZADOS"
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(0xFF00D4FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(20), 0, dp(8))
+        }
+        root.addView(heading)
+        val description = TextView(this).apply {
+            text = "Monte combinações próprias: escolha as funções, dê um nome e emoji e salve quantos perfis quiser. As opções são aplicadas individualmente; alguns ajustes dependem do Shizuku/XOS."
+            textSize = 13f
+            setTextColor(0xFFB8C4D9.toInt())
+            setPadding(0, 0, 0, dp(8))
+        }
+        root.addView(description)
+        val profileName = EditText(this).apply {
+            hint = "Nome do perfil (ex.: Jogo equilibrado)"
+            textSize = 15f
+            setSingleLine(true)
+        }
+        root.addView(profileName, LinearLayout.LayoutParams(-1, dp(50)))
+        val profileEmoji = EditText(this).apply {
+            hint = "Emoji (ex.: 🎮, ⚡, 🔋)"
+            textSize = 16f
+            setSingleLine(true)
+        }
+        root.addView(profileEmoji, LinearLayout.LayoutParams(-1, dp(50)))
+
+        val checkboxes = linkedMapOf<String, CheckBox>()
+        val optionsTitle = TextView(this).apply {
+            text = "ESCOLHA CADA AÇÃO"
+            textSize = 12f
+            setTextColor(0xFF7DD3FC.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(10), 0, dp(4))
+        }
+        root.addView(optionsTitle)
+        for ((key, label) in profileActions) {
+            val cb = CheckBox(this).apply {
+                text = label
+                textSize = 14f
+                setTextColor(0xFFE2E8F0.toInt())
+                isChecked = false
+            }
+            checkboxes[key] = cb
+            root.addView(cb)
+        }
+
+        val profileSpinner = Spinner(this)
+        root.addView(profileSpinner, LinearLayout.LayoutParams(-1, dp(50)))
+        fun refreshProfiles(selectIndex: Int = 0) {
+            val profiles = readCustomProfiles()
+            val labels = (0 until profiles.length()).map { i ->
+                val p = profiles.optJSONObject(i) ?: JSONObject()
+                (p.optString("emoji", "⚡") + " " + p.optString("name", "Perfil")).trim()
+            }.ifEmpty { listOf("Nenhum perfil salvo") }
+            profileSpinner.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, labels)
+            if (selectIndex in labels.indices) profileSpinner.setSelection(selectIndex)
+        }
+        refreshProfiles()
+
+        val saveButton = Button(this).apply {
+            text = "SALVAR / ATUALIZAR PERFIL"
+            setOnClickListener {
+                val name = profileName.text.toString().trim()
+                val emoji = profileEmoji.text.toString().trim().ifBlank { "⚡" }
+                if (name.isBlank()) {
+                    profileName.error = "Dê um nome ao perfil"
+                    Toast.makeText(this@MainActivity, "Digite o nome do perfil.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val actions = JSONArray()
+                checkboxes.filterValues { it.isChecked }.keys.forEach { actions.put(it) }
+                if (actions.length() == 0) {
+                    Toast.makeText(this@MainActivity, "Selecione pelo menos uma função.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val profiles = readCustomProfiles()
+                val selected = profileSpinner.selectedItemPosition
+                val old = profiles.optJSONObject(selected)
+                val profile = JSONObject().put("name", name).put("emoji", emoji).put("actions", actions)
+                if (old != null && selected in 0 until profiles.length()) profiles.put(selected, profile)
+                else profiles.put(profile)
+                getSharedPreferences("turbolite_profiles", MODE_PRIVATE).edit().putString("profiles", profiles.toString()).apply()
+                refreshProfiles(if (old != null) selected else profiles.length() - 1)
+                Toast.makeText(this@MainActivity, "Perfil salvo neste aparelho.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        root.addView(saveButton, LinearLayout.LayoutParams(-1, dp(50)))
+
+        val loadButton = Button(this).apply {
+            text = "CARREGAR E EDITAR PERFIL SELECIONADO"
+            setOnClickListener {
+                val p = readCustomProfiles().optJSONObject(profileSpinner.selectedItemPosition)
+                if (p == null) {
+                    Toast.makeText(this@MainActivity, "Crie um perfil primeiro.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                profileName.setText(p.optString("name"))
+                profileEmoji.setText(p.optString("emoji", "⚡"))
+                val actions = p.optJSONArray("actions") ?: JSONArray()
+                for ((key, cb) in checkboxes) cb.isChecked = (0 until actions.length()).any { actions.optString(it) == key }
+            }
+        }
+        root.addView(loadButton, LinearLayout.LayoutParams(-1, dp(48)))
+
+        val applyButton = Button(this).apply {
+            text = "APLICAR PERFIL SELECIONADO"
+            setOnClickListener {
+                val p = readCustomProfiles().optJSONObject(profileSpinner.selectedItemPosition)
+                if (p == null) {
+                    Toast.makeText(this@MainActivity, "Crie ou selecione um perfil salvo.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val actions = p.optJSONArray("actions") ?: JSONArray()
+                val selectedActions = (0 until actions.length()).map { actions.optString(it) }.toSet()
+                val keepPackage = keepPackages.getOrNull(keepSpinner.selectedItemPosition) ?: packageName
+                if ("hard" in selectedActions && keepPackage == packageName) {
+                    status.text = "Selecione primeiro o app que deve continuar aberto para usar HARD."
+                    Toast.makeText(this@MainActivity, "Escolha o app que deseja manter.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val label = p.optString("emoji", "⚡") + " " + p.optString("name", "Perfil")
+                status.text = "Aplicando perfil personalizado: $label"
+                // Executa as ações na ordem definida abaixo; cada ação reaproveita a rotina já existente.
+                if ("close_apps" in selectedActions) optimize()
+                if ("performance" in selectedActions) setAnimationMode(true)
+                if ("max_refresh" in selectedActions) setRefreshRateMode(true)
+                if ("dpi" in selectedActions) applyRecommendedDpi()
+                if ("game" in selectedActions) setGameMode("performance")
+                if ("streaming" in selectedActions) applyUsageProfile("streaming")
+                if ("efficiency" in selectedActions) applyUsageProfile("efficiency")
+                if ("cooling" in selectedActions) applyUsageProfile("cooling")
+                if ("hard" in selectedActions) applyUsageProfile("hard")
+                if ("clean_ram" in selectedActions) cleanRamAndBackgroundApps()
+                if ("thermal" in selectedActions && ::autoThermalCheck.isInitialized) autoThermalCheck.isChecked = true
+                if ("overlay" in selectedActions) startOverlay()
+                if (selectedActions.isEmpty()) status.text = "Esse perfil não tem ações."
+            }
+        }
+        root.addView(applyButton, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val deleteButton = Button(this).apply {
+            text = "EXCLUIR PERFIL SELECIONADO"
+            setOnClickListener {
+                val profiles = readCustomProfiles()
+                val selected = profileSpinner.selectedItemPosition
+                if (selected !in 0 until profiles.length()) {
+                    Toast.makeText(this@MainActivity, "Nenhum perfil para excluir.", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                val updated = JSONArray()
+                for (i in 0 until profiles.length()) if (i != selected) updated.put(profiles.getJSONObject(i))
+                getSharedPreferences("turbolite_profiles", MODE_PRIVATE).edit().putString("profiles", updated.toString()).apply()
+                refreshProfiles((selected - 1).coerceAtLeast(0))
+                Toast.makeText(this@MainActivity, "Perfil excluído.", Toast.LENGTH_SHORT).show()
+            }
+        }
+        root.addView(deleteButton, LinearLayout.LayoutParams(-1, dp(48)))
     }
 
     private var previousCpuTotal = 0L
@@ -256,6 +441,8 @@ class MainActivity : Activity() {
         }
         root.addView(refreshStatusButton, LinearLayout.LayoutParams(-1, dp(48)))
         updatePerformanceCard(performanceCard)
+
+        addCustomProfilesSection(root)
 
         actionButton = Button(this).apply {
             text = "FECHAR OS OUTROS APPS"
