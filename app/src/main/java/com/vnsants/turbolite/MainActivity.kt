@@ -8,6 +8,9 @@ import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -38,6 +41,49 @@ class MainActivity : Activity() {
     private lateinit var keepSpinner: Spinner
     private var userApps: List<ApplicationInfo> = emptyList()
     private var keepPackages: List<String> = emptyList()
+    private lateinit var autoThermalCheck: CheckBox
+    private val thermalHandler = Handler(Looper.getMainLooper())
+    private var thermalCheckBusy = false
+    private val thermalMonitor = object : Runnable {
+        override fun run() {
+            if (!::autoThermalCheck.isInitialized || !autoThermalCheck.isChecked || isFinishing) return
+            if (!thermalCheckBusy && hasShizukuPermission()) {
+                thermalCheckBusy = true
+                executor.execute {
+                    try {
+                        val batteryDump = runShell("dumpsys battery").second
+                        val raw = Regex("(?m)^\\s*temperature:\\s*(\\d+)").find(batteryDump)?.groupValues?.get(1)?.toIntOrNull()
+                        val batteryC = raw?.let { if (it > 100) it / 10f else it.toFloat() }
+                        val thermalDump = runShell("dumpsys thermalservice").second
+                        val thermalValues = Regex("mValue=([0-9]+(?:\\.[0-9]+)?)")
+                            .findAll(thermalDump).mapNotNull { it.groupValues[1].toFloatOrNull() }
+                            .filter { it in 35f..120f }.toList()
+                        val hot = (batteryC != null && batteryC >= 42f) || thermalValues.any { it >= 45f }
+                        val cool = batteryC != null && batteryC <= 39f && thermalValues.none { it >= 42f }
+                        runOnUiThread {
+                            if (!::autoThermalCheck.isInitialized || !autoThermalCheck.isChecked) return@runOnUiThread
+                            val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                            if (hot && !prefs.getBoolean("auto_thermal_cooling_active", false)) {
+                                prefs.edit().putBoolean("auto_thermal_cooling_active", true).apply()
+                                status.text = "Temperatura elevada detectada. Ativando perfil térmico automático…"
+                                applyUsageProfile("auto_cooling")
+                            } else if (cool && prefs.getBoolean("auto_thermal_cooling_active", false)) {
+                                prefs.edit().putBoolean("auto_thermal_cooling_active", false).apply()
+                                status.text = "Temperatura voltou a um nível menor. Restaurando configurações anteriores…"
+                                restoreUsageProfile()
+                            } else if (batteryC != null) {
+                                status.text = "Monitor térmico ativo • bateria: ${String.format(java.util.Locale.US, "%.1f", batteryC)} °C"
+                            }
+                        }
+                    } catch (_: Exception) {
+                    } finally {
+                        thermalCheckBusy = false
+                    }
+                }
+            }
+            thermalHandler.postDelayed(this, 20_000L)
+        }
+    }
 
     private val permissionListener = Shizuku.OnRequestPermissionResultListener { _, grantResult ->
         runOnUiThread {
@@ -86,6 +132,16 @@ class MainActivity : Activity() {
         }
         root.addView(subtitle)
 
+        val generalSection = TextView(this).apply {
+            text = "CONTROLE RÁPIDO"
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(0xFF00D4FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        root.addView(generalSection)
+
         val keepLabel = TextView(this).apply {
             text = "Aplicativo que deve continuar aberto:"
             textSize = 15f
@@ -129,6 +185,16 @@ class MainActivity : Activity() {
             setOnClickListener { setRefreshRateMode(true) }
         }
         root.addView(refreshRateButton, LinearLayout.LayoutParams(-1, dp(54)))
+
+        val gameSection = TextView(this).apply {
+            text = "JOGOS E INTERFACE"
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(0xFF00D4FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(18), 0, dp(8))
+        }
+        root.addView(gameSection)
 
         val dpiTitle = TextView(this).apply {
             text = "\\nDPI / DENSIDADE PARA JOGOS"
@@ -185,6 +251,15 @@ class MainActivity : Activity() {
         }
         root.addView(gameStandardButton, LinearLayout.LayoutParams(-1, dp(54)))
 
+        val energySection = TextView(this).apply {
+            text = "BATERIA, TEMPERATURA E MEMÓRIA"
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(0xFF00D4FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(20), 0, dp(8))
+        }
+        root.addView(energySection)
         val mediaTitle = TextView(this).apply {
             text = "\nMODO STREAMING / ECONOMIA / RESFRIAMENTO"
             textSize = 18f
@@ -215,6 +290,34 @@ class MainActivity : Activity() {
             setOnClickListener { applyUsageProfile("cooling") }
         }
         root.addView(coolingButton, LinearLayout.LayoutParams(-1, dp(52)))
+        autoThermalCheck = CheckBox(this).apply {
+            text = "AUTOMÁTICO: reduzir consumo quando esquentar"
+            textSize = 14f
+            setTextColor(0xFFE2E8F0.toInt())
+            isChecked = getSharedPreferences("turbolite_settings", MODE_PRIVATE).getBoolean("auto_thermal_monitor_enabled", false)
+            setOnCheckedChangeListener { _, checked ->
+                getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit()
+                    .putBoolean("auto_thermal_monitor_enabled", checked).apply()
+                thermalHandler.removeCallbacks(thermalMonitor)
+                if (checked) {
+                    status.text = "Monitor térmico ativado. A XOS pode ocultar a temperatura real."
+                    thermalHandler.post(thermalMonitor)
+                } else {
+                    getSharedPreferences("turbolite_settings", MODE_PRIVATE).edit()
+                        .putBoolean("auto_thermal_cooling_active", false).apply()
+                    status.text = "Monitor térmico automático desativado."
+                }
+            }
+        }
+        root.addView(autoThermalCheck)
+        val thermalHint = TextView(this).apply {
+            text = "Verifica a temperatura a cada 20 s enquanto o TurboLite estiver aberto. Ao detectar calor elevado, ativa economia e tenta reduzir a CPU; quando esfria, restaura as configurações salvas. A leitura pode não estar disponível em todas as versões da XOS."
+            textSize = 12f
+            setTextColor(0xFF9CAAC4.toInt())
+            setPadding(0, 0, 0, dp(10))
+        }
+        root.addView(thermalHint)
+
         val cleanRamButton = Button(this).apply {
             text = "COMBO: FECHAR APPS + LIMPAR RAM"
             setOnClickListener { cleanRamAndBackgroundApps() }
@@ -226,6 +329,15 @@ class MainActivity : Activity() {
         }
         root.addView(restoreUsageButton, LinearLayout.LayoutParams(-1, dp(52)))
 
+        val toolsSection = TextView(this).apply {
+            text = "PAINEL E MONITORAMENTO"
+            textSize = 12f
+            letterSpacing = 0.12f
+            setTextColor(0xFF00D4FF.toInt())
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(20), 0, dp(8))
+        }
+        root.addView(toolsSection)
         val overlayTitle = TextView(this).apply {
             text = "\nPAINEL FLUTUANTE"
             textSize = 18f
@@ -294,8 +406,52 @@ class MainActivity : Activity() {
         }
         root.addView(note)
 
-        val scroll = ScrollView(this).apply { addView(root) }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            setBackgroundColor(0xFF0B1020.toInt())
+            addView(root)
+        }
         setContentView(scroll)
+        styleControls(root)
+        if (getSharedPreferences("turbolite_settings", MODE_PRIVATE).getBoolean("auto_thermal_monitor_enabled", false)) {
+            thermalHandler.post(thermalMonitor)
+        }
+    }
+
+    private fun styleControls(view: android.view.View) {
+        if (view is Button) {
+            view.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(14).toFloat()
+                setColor(if (view.text.toString().contains("RESFRIAMENTO") || view.text.toString().contains("FECHAR APPS")) 0xFF183044.toInt() else 0xFF17243A.toInt())
+                setStroke(dp(1), 0xFF263B57.toInt())
+            }
+            view.setTextColor(0xFFEAFBFF.toInt())
+            view.textSize = 13f
+            view.typeface = Typeface.DEFAULT_BOLD
+            view.isAllCaps = false
+            view.setPadding(dp(12), dp(8), dp(12), dp(8))
+            val params = view.layoutParams
+            if (params is LinearLayout.LayoutParams) {
+                params.bottomMargin = dp(7)
+                view.layoutParams = params
+            }
+        } else if (view is Spinner) {
+            view.setBackgroundColor(0xFF17243A.toInt())
+        } else if (view is EditText) {
+            view.setTextColor(0xFFFFFFFF.toInt())
+            view.setHintTextColor(0xFF8292AD.toInt())
+            view.setPadding(dp(14), dp(8), dp(14), dp(8))
+            view.background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(12).toFloat()
+                setColor(0xFF121D30.toInt())
+                setStroke(dp(1), 0xFF263B57.toInt())
+            }
+        }
+        if (view is android.view.ViewGroup) {
+            for (index in 0 until view.childCount) styleControls(view.getChildAt(index))
+        }
     }
 
     private fun startOverlay() {
@@ -727,7 +883,7 @@ class MainActivity : Activity() {
                         .putString("usage_original_min", min.ifBlank { "null" })
                         .putBoolean("usage_profile_saved", true).apply()
                 }
-                val isCooling = profile == "cooling"
+                val isCooling = profile == "cooling" || profile == "auto_cooling"
                 val isEfficiency = profile == "efficiency" || isCooling
                 val lowPowerResult = runShell("settings put global low_power " + if (isEfficiency) "1" else "0")
                 if (lowPowerResult.first != 0) throw IllegalStateException("Não foi possível alterar economia do Android")
@@ -750,7 +906,7 @@ class MainActivity : Activity() {
                 }
 
                 var stopped = 0
-                val candidates = packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
+                val candidates = if (profile == "auto_cooling") emptyList() else packageManager.getInstalledApplications(PackageManager.GET_META_DATA).filter { app ->
                     app.packageName != packageName && app.packageName != keepPackage &&
                         (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
                         packageManager.getLaunchIntentForPackage(app.packageName) != null
@@ -855,6 +1011,7 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+        thermalHandler.removeCallbacks(thermalMonitor)
         Shizuku.removeRequestPermissionResultListener(permissionListener)
         executor.shutdownNow()
         super.onDestroy()
