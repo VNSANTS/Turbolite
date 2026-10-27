@@ -1109,39 +1109,57 @@ class MainActivity : Activity() {
     }
 
     private fun loadAppsToKeep() {
-        try {
-            userApps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { app ->
-                    (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
-                        packageManager.getLaunchIntentForPackage(app.packageName) != null
-                }
-                .sortedBy { packageManager.getApplicationLabel(it).toString().lowercase() }
+        status.text = "Carregando lista de apps…"
+        reloadButton.isEnabled = false
+        executor.execute {
+            try {
+                val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+                    .asSequence()
+                    .filter { app ->
+                        (app.flags and ApplicationInfo.FLAG_SYSTEM) == 0 &&
+                            packageManager.getLaunchIntentForPackage(app.packageName) != null
+                    }
+                    .map { app ->
+                        app to packageManager.getApplicationLabel(app).toString()
+                    }
+                    .sortedBy { (_, label) -> label.lowercase(java.util.Locale.ROOT) }
+                    .toList()
 
-            val labels = mutableListOf("TurboLite (manter aberto)")
-            val packages = mutableListOf(packageName)
-            userApps.filter { it.packageName != packageName }.forEach { app ->
-                labels.add("${packageManager.getApplicationLabel(app)} • ${app.packageName}")
-                packages.add(app.packageName)
-            }
-            keepPackages = packages
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    userApps = apps.map { it.first }
+                    val labels = mutableListOf("TurboLite (manter aberto)")
+                    val packages = mutableListOf(packageName)
+                    apps.filter { it.first.packageName != packageName }.forEach { (app, label) ->
+                        labels.add("$label • ${app.packageName}")
+                        packages.add(app.packageName)
+                    }
+                    keepPackages = packages
 
-            val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
-                setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-            }
-            keepSpinner.adapter = adapter
-            val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
-            val savedPackage = prefs.getString("keep_package", packageName)
-            val savedIndex = keepPackages.indexOf(savedPackage).takeIf { it >= 0 } ?: 0
-            keepSpinner.setSelection(savedIndex)
-            keepSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-                override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
-                    keepPackages.getOrNull(position)?.let { prefs.edit().putString("keep_package", it).apply() }
+                    val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels).apply {
+                        setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+                    }
+                    keepSpinner.adapter = adapter
+                    val prefs = getSharedPreferences("turbolite_settings", MODE_PRIVATE)
+                    val savedPackage = prefs.getString("keep_package", packageName)
+                    val savedIndex = keepPackages.indexOf(savedPackage).takeIf { it >= 0 } ?: 0
+                    keepSpinner.setSelection(savedIndex)
+                    keepSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+                        override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+                        override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: android.view.View?, position: Int, id: Long) {
+                            keepPackages.getOrNull(position)?.let { prefs.edit().putString("keep_package", it).apply() }
+                        }
+                    }
+                    status.text = "Lista carregada: ${labels.size - 1} apps disponíveis para manter."
                 }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    status.text = "Não consegui listar os apps: ${e.message ?: "erro desconhecido"}"
+                }
+            } finally {
+                runOnUiThread { if (!isFinishing && !isDestroyed) reloadButton.isEnabled = true }
             }
-            status.text = "Lista carregada: ${labels.size - 1} apps disponíveis para manter."
-        } catch (e: Exception) {
-            status.text = "Não consegui listar os apps: ${e.message ?: "erro desconhecido"}"
         }
     }
 
