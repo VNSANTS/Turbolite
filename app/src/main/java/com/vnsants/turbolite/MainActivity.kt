@@ -923,12 +923,13 @@ class MainActivity : Activity() {
                     val result = runShell("am force-stop '${app.packageName.replace("'", "")}'")
                     if (result.first == 0) stopped++
                 }
-                runShell("am kill-all")
+                if (profile != "auto_cooling") runShell("am kill-all")
 
                 runOnUiThread {
                     status.text = when (profile) {
                         "streaming" -> "Streaming ativado: equilíbrio, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage. A XOS pode ignorar a preferência de Hz."
                         "efficiency" -> "Eficiência ativada: economia de bateria, 60 Hz solicitado e $stopped apps encerrados. Mantido: $keepPackage."
+                        "auto_cooling" -> "Resfriamento automático ativado sem fechar apps: economia máxima, 60 Hz solicitado. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite."
                         else -> "Resfriamento solicitado: economia máxima, 60 Hz e $stopped apps encerrados. Políticas CPU alteradas: $cpuPoliciesChanged. Se 0, a XOS/kernel bloqueou o limite; apague a tela e pare de usar enquanto esfria."
                     }
                     Toast.makeText(this, "Perfil aplicado. App mantido: $keepPackage", Toast.LENGTH_LONG).show()
@@ -960,9 +961,8 @@ class MainActivity : Activity() {
                     if (result.first == 0) stopped++
                 }
                 runShell("am kill-all")
-                runShell("pm trim-caches 128M")
                 runOnUiThread {
-                    status.text = "Combo concluído: $stopped apps encerrados; limpeza de processos em cache solicitada. Mantido: $keepPackage. O Android pode reiniciar processos."
+                    status.text = "Combo concluído: $stopped apps encerrados; pedido de encerramento de processos em cache concluído. Mantido: $keepPackage. O Android pode reiniciar processos."
                     Toast.makeText(this, "Limpeza solicitada", Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
