@@ -9,6 +9,8 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 - Perfis personalizados permitem nome, emoji e seleção de funções, salvando os perfis localmente no aparelho.
 
 ## Funções atuais
+- **Central de Jogo:** abre o jogo selecionado; combina modo Performance do Android, animações rápidas e preferência de taxa de tela para uma sessão competitiva; oferece também uma sessão longa com economia e modo de bateria; inclui foco Não Perturbe, com restauração manual do filtro anterior, e atalho para os indicadores flutuantes.
+- **Perfis sem fechamento implícito:** streaming, eficiência e resfriamento solicitam ajustes e mantêm apps abertos. Somente o perfil HARD pede confirmação e solicita parada de outros apps de usuário.
 - **Fechar outros apps:** solicita force-stop dos apps de usuário selecionados, preservando o TurboLite e o app escolhido.
 - **Modo desempenho reversível:** salva os valores atuais das três escalas de animação do Android e altera para 0,5x.
 - **Preferência de Hz máxima:** tenta ler os modos de tela expostos pelo Android e aplicar o maior refresh rate via configurações do sistema, guardando os valores anteriores. O XOS pode ignorar a solicitação; maior Hz consome mais bateria.
@@ -30,6 +32,8 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 
 ## Limites e comportamento esperado
 - As métricas de FPS/temperatura são de melhor esforço e dependem do que o firmware expõe; não são telemetria garantida.
+- A Central de Jogo usa APIs e comandos padrão do Android quando disponíveis; a XOS pode rejeitar ou ignorar modo de jogo e taxas de tela.
+- O foco Não Perturbe exige conceder acesso especial nas Configurações. Desative o foco no TurboLite para restaurar o filtro anterior; se o app for encerrado durante a sessão, o filtro pode permanecer ativo até ser desativado manualmente no Android.
 
 ## Limites da beta
 - Solicita force-stop para apps de usuário que aparecem no launcher, exceto o TurboLite e o app escolhido na lista. Isso pode interromper reprodução, downloads, VPN e notificações; não apaga cache/dados e não usa `am kill-all`.
@@ -46,7 +50,7 @@ Aplicativo Android experimental para solicitar a parada forçada de aplicativos 
 3. Inicie o serviço do Shizuku pela depuração sem fio. Após reiniciar o telefone, pode ser necessário iniciar novamente.
 4. Abra o workflow **Build TurboLite Android Beta**, na aba Actions deste repositório, e baixe o artifact `TurboLite-Beta-APK` da execução mais recente concluída com sucesso.
 5. Instale o APK, abra o TurboLite e conceda a permissão do Shizuku.
-6. Selecione o jogo/app que quer manter e toque em **FECHAR OS OUTROS APPS**.
+6. Selecione um jogo na lista, use a Central de Jogo para abri-lo e escolha os auxílios desejados. O fechamento de apps é uma ação separada e confirmada.
 
 ## Configuração Android
 - `minSdk 26`, `targetSdk 34` e `compileSdk 35`; o alvo 34 habilita o comportamento de compatibilidade do Android 14.
