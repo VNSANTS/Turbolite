@@ -459,10 +459,11 @@ class MainActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(16), dp(18), dp(16), dp(18))
             background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                intArrayOf(0xFF102744.toInt(), 0xFF07111F.toInt())).apply {
-                cornerRadius = dp(22).toFloat()
-                setStroke(dp(1), 0xFF075B80.toInt())
+                intArrayOf(withAlpha(accentColor(), 0x34), 0xFF07111F.toInt())).apply {
+                cornerRadius = dp(24).toFloat()
+                setStroke(dp(1), withAlpha(accentColor(), 0x88))
             }
+            elevation = dp(3).toFloat()
         }
         val brandMark = android.widget.ImageView(this).apply {
             setImageResource(com.vnsants.turbolite.R.drawable.ic_turbolite)
@@ -477,12 +478,12 @@ class MainActivity : Activity() {
             text = "TurboLite"
             textSize = 29f
             setTextColor(0xFFF2F8FF.toInt())
-            typeface = Typeface.create("sans-serif-black", Typeface.BOLD_ITALIC)
+            typeface = Typeface.create("sans-serif-black", Typeface.NORMAL)
             letterSpacing = -0.025f
         }
         brandCopy.addView(title)
         val subtitle = TextView(this).apply {
-            text = "MAIS CONTROLE. MAIS DESEMPENHO."
+            text = "CONTROLE • MONITORAMENTO • PERFIS"
             textSize = 10f
             letterSpacing = 0.07f
             setTextColor(accentColor())
@@ -531,7 +532,9 @@ class MainActivity : Activity() {
             setColor(0xFF121D30.toInt())
             setStroke(dp(1), 0xFF263B57.toInt())
         }
-        status.setPadding(dp(14), dp(12), dp(14), dp(12))
+        status.setPadding(dp(16), dp(14), dp(16), dp(14))
+        status.minimumHeight = dp(52)
+        status.elevation = dp(1).toFloat()
         root.addView(status)
 
         performanceCard = TextView(this).apply {
@@ -545,8 +548,10 @@ class MainActivity : Activity() {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(18).toFloat()
                 setColor(0xFF101B2D.toInt())
-                setStroke(dp(1), accentColor())
+                setStroke(dp(1), withAlpha(accentColor(), 0x70))
             }
+            elevation = dp(2).toFloat()
+            setLineSpacing(dp(3).toFloat(), 1f)
         }
         root.addView(performanceCard, LinearLayout.LayoutParams(-1, dp(160)).apply {
             topMargin = dp(12)
@@ -824,11 +829,12 @@ class MainActivity : Activity() {
             setTextColor(0xFFEAF7FF.toInt())
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             setPadding(dp(16), dp(20), dp(16), dp(20))
-            background = GradientDrawable().apply {
+            background = GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                intArrayOf(withAlpha(accentColor(), 0x28), 0xFF0B192B.toInt())).apply {
                 cornerRadius = dp(24).toFloat()
-                setColor(0xFF0B192B.toInt())
-                setStroke(dp(2), accentColor())
+                setStroke(dp(1), withAlpha(accentColor(), 0x80))
             }
+            elevation = dp(2).toFloat()
         }
         root.addView(monitorGauge, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(12) })
 
@@ -840,8 +846,10 @@ class MainActivity : Activity() {
             background = GradientDrawable().apply {
                 cornerRadius = dp(18).toFloat()
                 setColor(0xFF0E1B2D.toInt())
-                setStroke(dp(1), 0xFF193A56.toInt())
+                setStroke(dp(1), 0xFF263B55.toInt())
             }
+            elevation = dp(1).toFloat()
+            setLineSpacing(dp(3).toFloat(), 1f)
         }
         root.addView(monitorMetrics, LinearLayout.LayoutParams(-1, dp(150)).apply { bottomMargin = dp(10) })
 
@@ -966,8 +974,9 @@ class MainActivity : Activity() {
             setPadding(dp(6), dp(7), dp(6), dp(7))
             background = GradientDrawable().apply {
                 setColor(0xFF0B1423.toInt())
-                setStroke(dp(1), 0xFF18334D.toInt())
+                setStroke(dp(1), 0xFF24364F.toInt())
             }
+            elevation = dp(5).toFloat()
         }
         val navItems = listOf(
             Triple("⌂", "Início", "home"),
@@ -987,11 +996,16 @@ class MainActivity : Activity() {
             navButtons.forEach { (key, button) ->
                 val selected = key == tab
                 button.setTextColor(if (selected) accentColor() else 0xFF8EA3BB.toInt())
-                button.background = GradientDrawable().apply {
-                    cornerRadius = dp(13).toFloat()
-                    setColor(if (selected) 0xFF102A40.toInt() else 0x00000000)
-                    if (selected) setStroke(dp(1), 0xFF087A9D.toInt())
-                }
+                button.isSelected = selected
+                button.background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x48)),
+                    GradientDrawable().apply {
+                        cornerRadius = dp(15).toFloat()
+                        setColor(if (selected) withAlpha(accentColor(), 0x24) else 0x00000000)
+                        if (selected) setStroke(dp(1), withAlpha(accentColor(), 0xA0))
+                    },
+                    null
+                )
             }
             scroll.scrollTo(0, 0)
             monitorHandler.removeCallbacks(monitorUpdater)
@@ -1008,10 +1022,18 @@ class MainActivity : Activity() {
                 typeface = Typeface.DEFAULT_BOLD
                 setTextColor(0xFF8EA3BB.toInt())
                 setPadding(dp(3), dp(7), dp(3), dp(7))
-                background = GradientDrawable().apply {
-                    cornerRadius = dp(13).toFloat()
-                    setColor(0x00000000)
-                }
+                isClickable = true
+                isFocusable = true
+                contentDescription = label
+                minHeight = dp(52)
+                background = android.graphics.drawable.RippleDrawable(
+                    android.content.res.ColorStateList.valueOf(withAlpha(accentColor(), 0x48)),
+                    GradientDrawable().apply {
+                        cornerRadius = dp(15).toFloat()
+                        setColor(0x00000000)
+                    },
+                    null
+                )
                 setOnClickListener { selectTab(tab) }
             }
             navButtons[tab] = button
@@ -1037,15 +1059,22 @@ class MainActivity : Activity() {
                 label.contains("ATIVAR MODO HARD") ||
                 label.contains("SALVAR / ATUALIZAR PERFIL")
             val caution = label.contains("HARD") || label.contains("EXCLUIR")
-            view.background = GradientDrawable(
+            val shape = GradientDrawable(
                 GradientDrawable.Orientation.LEFT_RIGHT,
-                if (primary) intArrayOf(0xFF007EA8.toInt(), 0xFF00B8D9.toInt())
-                else intArrayOf(0xFF13253B.toInt(), 0xFF0E1A2C.toInt())
+                if (primary) intArrayOf(lighten(accentColor(), 0.12f), accentColor())
+                else intArrayOf(0xFF17263A.toInt(), 0xFF101A2A.toInt())
             ).apply {
-                cornerRadius = dp(14).toFloat()
-                setStroke(dp(1), if (primary) accentColor() else 0xFF263F5C.toInt())
+                cornerRadius = dp(16).toFloat()
+                setStroke(dp(1), if (primary) withAlpha(accentColor(), 0xD0) else 0xFF2A3D57.toInt())
             }
-            view.setTextColor(if (primary) 0xFF03111D.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAFBFF.toInt())
+            view.background = android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(if (primary) 0x44FFFFFF else withAlpha(accentColor(), 0x35)),
+                shape,
+                shape.constantState?.newDrawable()?.mutate()
+            )
+            view.elevation = if (primary) dp(2).toFloat() else 0f
+            view.minimumHeight = maxOf(view.minimumHeight, dp(48))
+            view.setTextColor(if (primary) 0xFF07111C.toInt() else if (caution) 0xFFFFB4C4.toInt() else 0xFFEAF0F8.toInt())
             view.textSize = 13f
             view.typeface = Typeface.DEFAULT_BOLD
             view.isAllCaps = false
@@ -1060,9 +1089,9 @@ class MainActivity : Activity() {
                 "PERFIS PERSONALIZADOS", "PAINEL E MONITORAMENTO"
             )) {
             view.background = GradientDrawable().apply {
-                cornerRadius = dp(10).toFloat()
-                setColor(0xFF0D1B2D.toInt())
-                setStroke(dp(1), 0xFF153A55.toInt())
+                cornerRadius = dp(12).toFloat()
+                setColor(0xFF101A2A.toInt())
+                setStroke(dp(1), withAlpha(accentColor(), 0x35))
             }
             view.setPadding(dp(12), dp(12), dp(12), dp(12))
             val params = view.layoutParams
@@ -1074,13 +1103,15 @@ class MainActivity : Activity() {
         } else if (view is CheckBox) {
             view.setTextColor(0xFFE2E8F0.toInt())
             view.buttonTintList = android.content.res.ColorStateList.valueOf(accentColor())
-            view.setPadding(dp(8), dp(7), dp(8), dp(7))
+            view.minHeight = dp(48)
+            view.setPadding(dp(10), dp(8), dp(10), dp(8))
         } else if (view is Spinner) {
             view.setBackground(GradientDrawable().apply {
-                cornerRadius = dp(12).toFloat()
+                cornerRadius = dp(14).toFloat()
                 setColor(0xFF121D30.toInt())
-                setStroke(dp(1), 0xFF263B57.toInt())
+                setStroke(dp(1), 0xFF30415A.toInt())
             })
+            view.minimumHeight = maxOf(view.minimumHeight, dp(48))
         } else if (view is EditText) {
             view.setTextColor(0xFFFFFFFF.toInt())
             view.setHintTextColor(0xFF8292AD.toInt())
@@ -1790,6 +1821,18 @@ class MainActivity : Activity() {
             "green" -> 0xFF54E6A5.toInt()
             else -> 0xFF00D4FF.toInt()
         }
+    }
+
+    private fun withAlpha(color: Int, alpha: Int): Int =
+        (color and 0x00FFFFFF) or ((alpha.coerceIn(0, 255)) shl 24)
+
+    private fun lighten(color: Int, amount: Float): Int {
+        val fraction = amount.coerceIn(0f, 1f)
+        fun channel(shift: Int): Int {
+            val value = color ushr shift and 0xFF
+            return (value + (255 - value) * fraction).toInt().coerceIn(0, 255)
+        }
+        return (0xFF shl 24) or (channel(16) shl 16) or (channel(8) shl 8) or channel(0)
     }
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
