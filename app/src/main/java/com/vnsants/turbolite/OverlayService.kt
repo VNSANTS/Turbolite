@@ -209,7 +209,7 @@ class OverlayService : Service() {
                 }.toList()
                 if (timestamps.size >= 2) {
                     val recent = timestamps.distinct().count { it <= now && it >= now - 1_000_000_000L }
-                    if (recent > 0) return "FPS≈ $recent (estimativa)"
+                    if (recent > 0) return "FPS≈ $recent"
                 }
             }
             "FPS≈ indisponível"
