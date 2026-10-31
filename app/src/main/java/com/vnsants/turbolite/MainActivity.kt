@@ -709,7 +709,7 @@ class MainActivity : Activity() {
         }
         addMetricToggle("Mostrar RAM", "show_ram", true)
         addMetricToggle("Mostrar ping (teste para 1.1.1.1)", "show_ping", false)
-        addMetricToggle("Mostrar FPS (estimativa; depende do Android)", "show_fps", true)
+        addMetricToggle("Mostrar FPS (depende do Android)", "show_fps", true)
         addMetricToggle("Mostrar uso de CPU (Shizuku)", "show_cpu", false)
         addMetricToggle("Mostrar temperatura térmica (se o fabricante liberar)", "show_temp", false)
 
